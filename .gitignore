@@ -1,8 +1,8 @@
+# Android Studio / Gradle
 *.iml
 .gradle
 /local.properties
 /.idea
-.DS_Store
 /build
 /captures
 .externalNativeBuild
@@ -15,7 +15,7 @@ app/build/
 .gemini/
 .kotlin/
 
-# Python & Environment
+# Python & Environments
 __pycache__/
 *.py[cod]
 *$py.class
@@ -29,8 +29,11 @@ ENV/
 .agents/
 .claude/
 
-# OS Files
+# Operating System Files
+.DS_Store
 Thumbs.db
 Desktop.ini
+
+# Temporary files
 *.tmp
 *.temp
