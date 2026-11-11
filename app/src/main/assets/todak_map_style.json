@@ -1,0 +1,77 @@
+{
+  "version": 8,
+  "name": "todak-night-route-first",
+  "sources": {
+    "omt": { "type": "vector", "url": "https://tiles.openfreemap.org/planet" },
+    "dem": {
+      "type": "raster-dem",
+      "tiles": ["https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png"],
+      "encoding": "terrarium",
+      "tileSize": 256,
+      "maxzoom": 13
+    }
+  },
+  "layers": [
+    { "id": "background", "type": "background", "paint": { "background-color": "#0a1220" } },
+
+    { "id": "landcover-wood", "type": "fill", "source": "omt", "source-layer": "landcover",
+      "filter": ["==", "class", "wood"],
+      "paint": { "fill-color": "#0f2a26", "fill-opacity": 0.9 } },
+    { "id": "landcover-grass", "type": "fill", "source": "omt", "source-layer": "landcover",
+      "filter": ["==", "class", "grass"],
+      "paint": { "fill-color": "#102520", "fill-opacity": 0.8 } },
+    { "id": "park", "type": "fill", "source": "omt", "source-layer": "park",
+      "paint": { "fill-color": "#11302a", "fill-opacity": 0.7 } },
+
+    { "id": "relief", "type": "hillshade", "source": "dem",
+      "paint": {
+        "hillshade-exaggeration": 0.85,
+        "hillshade-shadow-color": "#03060d",
+        "hillshade-highlight-color": "#4a76a8",
+        "hillshade-accent-color": "#0b1830",
+        "hillshade-illumination-direction": 315
+      } },
+
+    { "id": "water", "type": "fill", "source": "omt", "source-layer": "water",
+      "paint": { "fill-color": "#0a2c4d" } },
+    { "id": "waterway", "type": "line", "source": "omt", "source-layer": "waterway",
+      "paint": { "line-color": "#0a2c4d", "line-width": 1.5 } },
+
+    { "id": "road-casing", "type": "line", "source": "omt", "source-layer": "transportation",
+      "filter": ["in", "class", "minor", "service", "tertiary", "secondary", "primary", "motorway", "trunk"],
+      "layout": { "line-cap": "round", "line-join": "round" },
+      "paint": { "line-color": "#070d19",
+        "line-width": ["interpolate", ["exponential", 1.6], ["zoom"], 12, 1.2, 15, 5, 17, 16, 19, 44] } },
+
+    { "id": "road-minor", "type": "line", "source": "omt", "source-layer": "transportation",
+      "filter": ["in", "class", "minor", "service", "tertiary"],
+      "layout": { "line-cap": "round", "line-join": "round" },
+      "paint": { "line-color": "#2a3f5f",
+        "line-width": ["interpolate", ["exponential", 1.6], ["zoom"], 12, 0.5, 15, 3, 17, 10, 19, 30] } },
+    { "id": "road-secondary", "type": "line", "source": "omt", "source-layer": "transportation",
+      "filter": ["in", "class", "secondary", "primary"],
+      "layout": { "line-cap": "round", "line-join": "round" },
+      "paint": { "line-color": "#3a5580",
+        "line-width": ["interpolate", ["exponential", 1.6], ["zoom"], 10, 0.8, 15, 4.5, 17, 13, 19, 38] } },
+    { "id": "road-major", "type": "line", "source": "omt", "source-layer": "transportation",
+      "filter": ["in", "class", "motorway", "trunk"],
+      "layout": { "line-cap": "round", "line-join": "round" },
+      "paint": { "line-color": "#4a6a9a",
+        "line-width": ["interpolate", ["exponential", 1.6], ["zoom"], 8, 1, 15, 6, 17, 16, 19, 44] } },
+
+    { "id": "building-flat", "type": "fill", "source": "omt", "source-layer": "building",
+      "minzoom": 13, "maxzoom": 15,
+      "paint": { "fill-color": "#182a44" } },
+    { "id": "building-3d", "type": "fill-extrusion", "source": "omt", "source-layer": "building",
+      "minzoom": 14,
+      "filter": ["!", ["has", "hide_3d"]],
+      "paint": {
+        "fill-extrusion-base": ["coalesce", ["get", "render_min_height"], 0],
+        "fill-extrusion-height": ["coalesce", ["get", "render_height"], 6],
+        "fill-extrusion-color": ["interpolate", ["linear"], ["coalesce", ["get", "render_height"], 6],
+          0, "#1a2c48", 30, "#233a5e", 80, "#2f4b78", 180, "#46689e"],
+        "fill-extrusion-opacity": 0.9,
+        "fill-extrusion-vertical-gradient": true
+      } }
+  ]
+}

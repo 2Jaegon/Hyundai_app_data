@@ -1,0 +1,36 @@
+*.iml
+.gradle
+/local.properties
+/.idea
+.DS_Store
+/build
+/captures
+.externalNativeBuild
+.cxx
+local.properties
+app/build/
+*.hprof
+*.lock
+.superpowers/
+.gemini/
+.kotlin/
+
+# Python & Environment
+__pycache__/
+*.py[cod]
+*$py.class
+.env
+.venv
+env/
+venv/
+ENV/
+
+# Agent local caches & symlinks
+.agents/
+.claude/
+
+# OS Files
+Thumbs.db
+Desktop.ini
+*.tmp
+*.temp
