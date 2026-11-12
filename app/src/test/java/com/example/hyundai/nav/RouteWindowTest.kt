@@ -80,4 +80,59 @@ class RouteWindowTest {
         // 다시 만들기 전에 차가 창 끝에 닿으면 앞 선이 비어 보이므로, 창이 항상 더 길어야 한다.
         assertTrue(RouteWindow.AHEAD_M > RouteWindow.REBUILD_M * 2)
     }
+
+    @Test
+    fun computeNoteRouteZones_mapsSameDirectionNotesToRouteSegments() {
+        val route = RouteRepository.fallback()
+        val notes = listOf(
+            com.example.hyundai.model.VoiceNote(
+                id = "n1",
+                authorNickname = "성수동",
+                authorPetName = "제로",
+                authorPetLevel = 3,
+                rawText = "안전운전",
+                displayText = "안전운전",
+                category = com.example.hyundai.model.NoteCategory.SAFETY_3H,
+                moderationStatus = com.example.hyundai.model.ModerationStatus.APPROVED,
+                roadSegmentName = "성수대교",
+                latitude = 37.5448,
+                longitude = 127.0462,
+                headingDeg = 82f,
+                distanceMeters = 180,
+                headingDiffDeg = 3f,
+                createdAtLabel = "방금",
+                remainingLifeLabel = "3시간",
+                todakCount = 1,
+                listenerCount = 1
+            ),
+            com.example.hyundai.model.VoiceNote(
+                id = "n_opposite",
+                authorNickname = "반대차선",
+                authorPetName = "제로",
+                authorPetLevel = 2,
+                rawText = "반대",
+                displayText = "반대",
+                category = com.example.hyundai.model.NoteCategory.VIBE_7D,
+                moderationStatus = com.example.hyundai.model.ModerationStatus.APPROVED,
+                roadSegmentName = "반대차선",
+                latitude = 37.5450,
+                longitude = 127.0445,
+                headingDeg = 265f,
+                distanceMeters = 120,
+                headingDiffDeg = 180f, // Opposite lane (> 45 deg) should be excluded
+                createdAtLabel = "방금",
+                remainingLifeLabel = "7일",
+                todakCount = 1,
+                listenerCount = 1
+            )
+        )
+        val zones = com.example.hyundai.viewmodel.computeNoteRouteZones(
+            track = route.track,
+            notes = notes,
+            commuteOnly = false
+        )
+        assertEquals(1, zones.size)
+        assertEquals("n1", zones[0].noteId)
+        assertTrue(zones[0].endM > zones[0].startM)
+    }
 }

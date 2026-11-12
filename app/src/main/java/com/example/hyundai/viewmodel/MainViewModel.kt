@@ -29,8 +29,10 @@ import com.example.hyundai.nav.GeoPoint
 import com.example.hyundai.nav.MapTheme
 import com.example.hyundai.nav.NavSnapshot
 import com.example.hyundai.nav.NavUiState
+import com.example.hyundai.nav.NoteRouteZone
 import com.example.hyundai.nav.RouteData
 import com.example.hyundai.nav.RouteRepository
+import com.example.hyundai.nav.RouteTrack
 import com.example.hyundai.nav.TurnIcon
 import com.example.hyundai.sdk.PleosSdkManager
 import kotlinx.coroutines.Job
@@ -62,7 +64,7 @@ data class AppUiState(
     val heldNote: VoiceNote? = null,
     val showOnlyCommuteBand: Boolean = false,
     val showFilteredOppositeLaneNotes: Boolean = true,
-    val autoPlayTts: Boolean = false,
+    val autoPlayTts: Boolean = true,
     val activeIncomingNote: VoiceNote? = null,
     val isTtsSpeaking: Boolean = false,
     val ttsSpeakingText: String = "",
@@ -203,6 +205,28 @@ class MainViewModel(application: Application) :
         if (progressM >= data.track.totalM) return
         progressM = (progressM + t.speedKmh / 3.6).coerceAtMost(data.track.totalM)
         publishNav()
+        checkNoteZoneProximity()
+    }
+
+    /**
+     * 주행 중 앞쪽 쪽지 구간(180m 이내)에 진입했을 때 쪽지를 자동으로 띄우고,
+     * 자동 읽기(`autoPlayTts`)가 켜져 있으면 즉시 음성(TTS)으로 읽어 준다.
+     */
+    private fun checkNoteZoneProximity() {
+        val state = _uiState.value
+        if (state.telemetry.gear != GearState.D || state.isTtsSpeaking || state.heldNote != null) return
+        val zones = state.nav.noteZones
+        val enteredZone = zones.firstOrNull { z ->
+            progressM >= (z.startM - 40.0) && progressM <= z.endM
+        } ?: return
+        val note = state.notes.firstOrNull { it.id == enteredZone.noteId && !it.isListenedByMe && it.isSameDirection }
+            ?: return
+        if (state.activeIncomingNote?.id != note.id) {
+            _uiState.update { it.copy(activeIncomingNote = note) }
+        }
+        if (state.autoPlayTts) {
+            listenToNoteViaTts(note)
+        }
     }
 
     private fun publishNav() {
@@ -225,6 +249,11 @@ class MainViewModel(application: Application) :
             pos = data.track.pointAt(progressM)
             bearing = data.track.bearingAt(progressM).toFloat()
         }
+        val zones = computeNoteRouteZones(
+            track = data.track,
+            notes = _uiState.value.notes,
+            commuteOnly = _uiState.value.showOnlyCommuteBand
+        )
         val nav = NavUiState(
             hasRoute = true,
             isFallbackRoute = routeIsFallback,
@@ -232,6 +261,7 @@ class MainViewModel(application: Application) :
             carBearing = bearing,
             track = data.track,
             progressM = progressM,
+            noteZones = zones,
             nextTurn = shownTurn,
             distToTurnM = shownDist,
             remainingM = snap.remainingM,
@@ -682,20 +712,55 @@ class MainViewModel(application: Application) :
     }
 
     /**
-     * 5. 기어 전환 (P 전환 시 오늘의 온기 리포트 & 바퀴자취 지도 자동 표시)
+     * 5. 기어 전환 (P 전환 시 리포트 모달을 강제로 띄우지 않고, 오늘의 주행 기록과 바퀴자취만 자동 저장해 두며
+     *    운전자가 정차 화면 상단의 리포트 버튼을 눌렀을 때만 열리도록 한다.)
      */
     fun shiftGear(newGear: GearState) {
         _uiState.update { state ->
             val newSpeed = if (newGear == GearState.P) 0f else 62f
+            val updatedTracks = if (newGear == GearState.P && state.telemetry.gear != GearState.P) {
+                val gradeLabel = when {
+                    state.evaluation.completedMannerTurns > 0 -> "Manner 깜빡이 ${state.evaluation.completedMannerTurns}회"
+                    state.evaluation.completedSmoothWindows > 0 -> "Smooth ${state.evaluation.completedSmoothWindows * 2}km 완주"
+                    else -> "Safe ${state.evaluation.completedSafeBlocks}km 달성"
+                }
+                val newTrack = TireTrackNode(
+                    segmentName = "${state.telemetry.roadName} 주차 완료",
+                    timeLabel = "방금",
+                    mannerGrade = gradeLabel,
+                    noteCount = state.parkingReport.todayNotesLeft,
+                    todakReceived = state.parkingReport.todayTodakReceived,
+                    xFraction = 0.88f,
+                    yFraction = 0.24f
+                )
+                if (state.tireTracks.lastOrNull()?.segmentName == newTrack.segmentName) {
+                    state.tireTracks
+                } else {
+                    state.tireTracks + newTrack
+                }
+            } else {
+                state.tireTracks
+            }
+            val updatedReport = if (newGear == GearState.P) {
+                state.parkingReport.copy(
+                    todayMannerTurns = state.evaluation.completedMannerTurns,
+                    todaySmoothWindows = state.evaluation.completedSmoothWindows
+                )
+            } else {
+                state.parkingReport
+            }
             state.copy(
                 telemetry = state.telemetry.copy(
                     gear = newGear,
                     speedKmh = newSpeed,
                     brakePressed = newGear == GearState.P
                 ),
-                showParkingReportModal = newGear == GearState.P,
+                // 주차 시 리포트를 강제로 팝업하지 않고 백그라운드에 기록만 해 둔다.
+                showParkingReportModal = false,
+                parkingReport = updatedReport,
+                tireTracks = updatedTracks,
                 toastBanner = if (newGear == GearState.P) {
-                    "주차(P) 상태 전환 완료! 오늘의 온기 리포트와 바퀴자취 지도가 열렸습니다."
+                    "주차(P) 전환 · 오늘의 주행 리포트가 기록되었습니다. 상단 [리포트]에서 언제든 확인하세요."
                 } else {
                     "${newGear.label}단 전환 · 주행 중에는 음성 쪽지 안전 모드로 동작합니다."
                 }
@@ -1046,6 +1111,7 @@ class MainViewModel(application: Application) :
                 toastBanner = "쪽지 등록 완료! [${mod.category.label} · ${mod.category.lifespanLabel}] (+15 EXP, +20 P 적립)"
             )
         }
+        publishNav()
     }
 
     // --- Modals & Hyundai Reward Conversion ---
@@ -1096,6 +1162,48 @@ private const val NEW_DESTINATION_MIN_M = 100.0
 
 /** 실제 위치가 경로에서 이 거리보다 멀면 경로 위의 차량 위치로 쓰지 않는다. */
 private const val REAL_LOCATION_MAX_OFF_ROUTE_M = 2_000.0
+
+/** 쪽지 하나가 경로 위에서 다른 색상으로 강조 표시되는 구간의 기본 반경(앞뒤 각 90m = 총 180m 구간). */
+private const val NOTE_ZONE_HALF_LENGTH_M = 90.0
+
+/**
+ * 현재 경로([track]) 위에서 같은 방향(`isSameDirection`) 쪽지들이 놓인 구간([NoteRouteZone])을 계산한다.
+ * - 실제 GPS 좌표가 경로에서 600m 이내에 있으면 `track.project(pos)` 위치에 매핑하고,
+ * - 오프라인 데모 경로처럼 좌표가 다를 때는 `distanceMeters`를 기준으로 경로 위에 자연스럽게 배치한다.
+ */
+internal fun computeNoteRouteZones(
+    track: RouteTrack,
+    notes: List<VoiceNote>,
+    commuteOnly: Boolean
+): List<NoteRouteZone> {
+    if (track.totalM < 20.0) return emptyList()
+    val filtered = notes.filter {
+        it.isSameDirection && (!commuteOnly || it.isCommuteBandOnly)
+    }
+    return filtered.mapIndexedNotNull { idx, note ->
+        val p = GeoPoint(note.latitude, note.longitude)
+        val distToRoute = track.distanceToRouteM(p)
+        val centerM = when {
+            note.distanceMeters > 0 && distToRoute > 120.0 -> note.distanceMeters.toDouble()
+            distToRoute <= 600.0 -> track.project(p).let { proj ->
+                // 출발점(0m) 바로 위에 몰려 있으면 distanceMeters나 인덱스 간격으로 펼쳐 보여 준다.
+                if (proj < 30.0 && note.distanceMeters > 0) note.distanceMeters.toDouble() else proj
+            }
+            note.distanceMeters > 0 -> note.distanceMeters.toDouble()
+            else -> ((idx + 1) * 220.0)
+        }.coerceIn(30.0, (track.totalM - 30.0).coerceAtLeast(30.0))
+
+        val startM = (centerM - NOTE_ZONE_HALF_LENGTH_M).coerceAtLeast(0.0)
+        val endM = (centerM + NOTE_ZONE_HALF_LENGTH_M).coerceAtMost(track.totalM)
+        if (endM - startM < 10.0) null
+        else NoteRouteZone(
+            noteId = note.id,
+            startM = startM,
+            endM = endM,
+            isSafety = note.category == NoteCategory.SAFETY_3H
+        )
+    }
+}
 
 /** 온길의 첫 동행 펫 제로. 다른 펫은 이후 확장한다. */
 private fun initialPet(): PetCharacter = PetCharacter(

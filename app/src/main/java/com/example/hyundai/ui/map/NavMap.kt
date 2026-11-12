@@ -26,6 +26,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.example.hyundai.nav.GeoMath
 import com.example.hyundai.nav.GeoPoint
 import com.example.hyundai.nav.NavUiState
+import com.example.hyundai.nav.NoteRouteZone
 import com.example.hyundai.nav.RouteTrack
 import com.example.hyundai.nav.RouteWindow
 import kotlinx.coroutines.flow.collectLatest
@@ -39,24 +40,32 @@ import org.maplibre.android.maps.MapView
 import org.maplibre.android.maps.Style
 import org.maplibre.android.style.expressions.Expression
 import org.maplibre.android.style.layers.LineLayer
+import org.maplibre.android.style.layers.Property
 import org.maplibre.android.style.layers.PropertyFactory.lineBlur
 import org.maplibre.android.style.layers.PropertyFactory.lineCap
+import org.maplibre.android.style.layers.PropertyFactory.lineColor
 import org.maplibre.android.style.layers.PropertyFactory.lineGradient
 import org.maplibre.android.style.layers.PropertyFactory.lineJoin
 import org.maplibre.android.style.layers.PropertyFactory.lineOpacity
 import org.maplibre.android.style.layers.PropertyFactory.lineWidth
-import org.maplibre.android.style.layers.Property
 import org.maplibre.android.style.sources.GeoJsonOptions
 import org.maplibre.android.style.sources.GeoJsonSource
 import org.maplibre.geojson.Feature
 import org.maplibre.geojson.FeatureCollection
 import org.maplibre.geojson.LineString
 import org.maplibre.geojson.Point
+import kotlin.math.max
+import kotlin.math.min
 
 private const val ROUTE_SRC = "todak-route-src"
 private const val GLOW_LAYER = "todak-route-glow"
 private const val LINE_LAYER = "todak-route-line"
 private const val CORE_LAYER = "todak-route-core"
+
+private const val NOTE_ZONE_SRC = "todak-note-zone-src"
+private const val NOTE_ZONE_GLOW_LAYER = "todak-note-zone-glow"
+private const val NOTE_ZONE_LINE_LAYER = "todak-note-zone-line"
+private const val NOTE_ZONE_CORE_LAYER = "todak-note-zone-core"
 
 /** 기울기를 낮추고 더 가깝게 봐서, 차 앞 가까운 길만 크게 보이게 한다. */
 private const val CAMERA_TILT = 45.0
@@ -102,7 +111,7 @@ private fun trimGradient(fraction: Float, color: String): Expression =
 
 /**
  * 3D 지도. 낮에는 밝은 회청색, 밤에는 어두운 지도로 바뀐다. 건물과 산 지형(음영)은 은은하게, 내 경로만 또렷하게 보인다.
- * 지도 데이터는 키가 필요 없는 OpenFreeMap(건물/도로)과 AWS 공개 고도 타일(산 음영)을 쓴다.
+ * 도로 위에 음성 쪽지가 있는 구간(`noteZones`)은 따뜻한 앰버 골드 색상으로 구분해 표시한다.
  */
 @Composable
 fun NavMap(
@@ -205,6 +214,10 @@ fun NavMap(
             style.getLayerAs<LineLayer>(GLOW_LAYER)?.setProperties(route)
             style.getLayerAs<LineLayer>(LINE_LAYER)?.setProperties(route)
             style.getLayerAs<LineLayer>(CORE_LAYER)?.setProperties(lineGradient(trimGradient(fraction, NavTheme.routeCore(isDay))))
+
+            // 차 앞쪽에 놓인 쪽지 구간들만 잘라 따뜻한 앰버 골드 색상으로 경로 위에 표시한다.
+            style.getSourceAs<GeoJsonSource>(NOTE_ZONE_SRC)
+                ?.setGeoJson(noteZonesGeoJson(track, latestNav.noteZones, progressM, window.endM))
         }
 
         fun apply(pose: CameraPose) {
@@ -277,6 +290,30 @@ private fun routeGeoJson(pts: List<GeoPoint>): FeatureCollection {
     return FeatureCollection.fromFeature(Feature.fromGeometry(line))
 }
 
+/**
+ * 경로 위에서 쪽지가 있는 구간([zones]) 중 아직 지나가지 않은 앞쪽 구간만 잘라 GeoJSON FeatureCollection으로 만든다.
+ */
+internal fun noteZonesGeoJson(
+    track: RouteTrack,
+    zones: List<NoteRouteZone>,
+    progressM: Double,
+    windowEndM: Double
+): FeatureCollection {
+    if (zones.isEmpty()) return FeatureCollection.fromFeatures(emptyList<Feature>())
+    val features = ArrayList<Feature>(zones.size)
+    for (zone in zones) {
+        val segStart = max(zone.startM, progressM)
+        val segEnd = min(zone.endM, windowEndM)
+        if (segEnd - segStart < 8.0) continue
+        val pts = track.window(segStart, segEnd)
+        if (pts.size >= 2) {
+            val line = LineString.fromLngLats(pts.map { Point.fromLngLat(it.lng, it.lat) })
+            features.add(Feature.fromGeometry(line))
+        }
+    }
+    return FeatureCollection.fromFeatures(features)
+}
+
 private fun installRouteLayers(style: Style, isDay: Boolean) {
     // 선 그라데이션은 line metrics가 켜진 소스에서만 동작한다. 타일 경계에서 굵은 선이 잘리지 않게 여유(buffer)도 준다.
     style.addSource(
@@ -284,6 +321,13 @@ private fun installRouteLayers(style: Style, isDay: Boolean) {
             ROUTE_SRC,
             FeatureCollection.fromFeatures(emptyList<Feature>()),
             GeoJsonOptions().withLineMetrics(true).withBuffer(256)
+        )
+    )
+    style.addSource(
+        GeoJsonSource(
+            NOTE_ZONE_SRC,
+            FeatureCollection.fromFeatures(emptyList<Feature>()),
+            GeoJsonOptions().withBuffer(256)
         )
     )
 
@@ -305,6 +349,31 @@ private fun installRouteLayers(style: Style, isDay: Boolean) {
         LineLayer(CORE_LAYER, ROUTE_SRC).withProperties(
             lineGradient(trimGradient(0f, NavTheme.routeCore(isDay))),
             lineWidth(zoomWidth(5f, 11f)),
+            lineCap(Property.LINE_CAP_ROUND), lineJoin(Property.LINE_JOIN_ROUND)
+        )
+    )
+
+    // 도로 위에 쪽지가 있는 구간을 다른 색상(따뜻한 앰버 골드)으로 강조하는 레이어
+    val zoneColor = NavTheme.noteZone(isDay).toColorInt()
+    val zoneCoreColor = NavTheme.NOTE_ZONE_CORE.toColorInt()
+    style.addLayer(
+        LineLayer(NOTE_ZONE_GLOW_LAYER, NOTE_ZONE_SRC).withProperties(
+            lineColor(zoneColor),
+            lineOpacity(0.42f), lineWidth(zoomWidth(38f, 80f)), lineBlur(12f),
+            lineCap(Property.LINE_CAP_ROUND), lineJoin(Property.LINE_JOIN_ROUND)
+        )
+    )
+    style.addLayer(
+        LineLayer(NOTE_ZONE_LINE_LAYER, NOTE_ZONE_SRC).withProperties(
+            lineColor(zoneColor),
+            lineWidth(zoomWidth(18f, 38f)),
+            lineCap(Property.LINE_CAP_ROUND), lineJoin(Property.LINE_JOIN_ROUND)
+        )
+    )
+    style.addLayer(
+        LineLayer(NOTE_ZONE_CORE_LAYER, NOTE_ZONE_SRC).withProperties(
+            lineColor(zoneCoreColor),
+            lineWidth(zoomWidth(6f, 13f)),
             lineCap(Property.LINE_CAP_ROUND), lineJoin(Property.LINE_JOIN_ROUND)
         )
     )

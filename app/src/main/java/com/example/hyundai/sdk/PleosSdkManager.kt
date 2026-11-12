@@ -440,24 +440,55 @@ class PleosSdkManager(
         }
     }
 
+    /** Pleos TTS가 speak() 호출 뒤 이 시간(ms) 안에 onStart를 주지 않으면 데몬 미응답으로 보고 Android TTS로 전환한다. */
+    private val pleosTtsWatchdogRunnable = Runnable {
+        if (released) return@Runnable
+        val text = lastSpokenText
+        if (text.isNotBlank() && !fallbackUsed) {
+            Log.w(tag, "Pleos TTS did not start within watchdog window; switching to Android TTS fallback")
+            fallbackUsed = true
+            runCatching { pleosTts?.stop() }
+            speakWithAndroidTts(text)
+        }
+    }
+
     private fun initTtsSdk() {
         runCatching {
             androidTts = AndroidTts(appContext) { code ->
                 if (code == AndroidTts.SUCCESS) {
-                    androidTts?.language = Locale.KOREAN
+                    val langResult = androidTts?.setLanguage(Locale.KOREAN) ?: AndroidTts.LANG_NOT_SUPPORTED
+                    if (langResult == AndroidTts.LANG_MISSING_DATA || langResult == AndroidTts.LANG_NOT_SUPPORTED) {
+                        androidTts?.setLanguage(Locale.getDefault())
+                    }
+                    androidTts?.setAudioAttributes(
+                        AudioAttributes.Builder()
+                            .setUsage(AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE)
+                            .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                            .build()
+                    )
                     androidTts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
-                        override fun onStart(utteranceId: String?) {}
+                        override fun onStart(utteranceId: String?) {
+                            listener.onTtsStateChanged(true, lastSpokenText)
+                        }
                         override fun onDone(utteranceId: String?) {
+                            lastSpokenText = ""
                             abandonSpeechAudioFocus()
                             listener.onTtsStateChanged(false, "")
                         }
                         @Deprecated("Deprecated in Java")
                         override fun onError(utteranceId: String?) {
+                            lastSpokenText = ""
                             abandonSpeechAudioFocus()
                             listener.onTtsStateChanged(false, "")
                         }
                     })
                     isAndroidTtsReady = true
+                    // 초기화 전에 요청된 문장이 대기 중이면 즉시 읽는다.
+                    val pending = pendingAndroidSpeech
+                    if (!pending.isNullOrBlank()) {
+                        pendingAndroidSpeech = null
+                        speakWithAndroidTts(pending)
+                    }
                 }
             }
         }
@@ -493,6 +524,7 @@ class PleosSdkManager(
     }
 
     private val mainHandler = Handler(Looper.getMainLooper())
+    @Volatile private var pendingAndroidSpeech: String? = null
 
     /** 이벤트 리스너는 SDK 내부 준비가 끝난 뒤에만 붙일 수 있어서, 실패하면 0.5초 뒤 다시 시도한다. */
     private fun attachTtsListener(tts: TextToSpeech, attempt: Int) {
@@ -515,6 +547,7 @@ class PleosSdkManager(
     private val ttsEventListener = object : TtsEventListener {
         override fun onStart() {
             Log.i(tag, "Pleos TTS onStart")
+            mainHandler.removeCallbacks(pleosTtsWatchdogRunnable)
             listener.onTtsStateChanged(true, lastSpokenText)
         }
 
@@ -527,6 +560,7 @@ class PleosSdkManager(
 
         override fun onDone() {
             Log.i(tag, "Pleos TTS onDone")
+            mainHandler.removeCallbacks(pleosTtsWatchdogRunnable)
             lastSpokenText = ""
             abandonSpeechAudioFocus()
             listener.onTtsStateChanged(false, "")
@@ -534,6 +568,7 @@ class PleosSdkManager(
 
         override fun onError(error: TtsErrorType) {
             Log.w(tag, "Pleos TTS onError: $error")
+            mainHandler.removeCallbacks(pleosTtsWatchdogRunnable)
             status = status.copy(ttsConnected = false, ttsDetail = "TextToSpeech 3.3.1 오류: $error (안드로이드 TTS로 대체)")
             publishStatus()
             // Pleos TTS가 실패했으면 같은 문장을 안드로이드 TTS로 한 번만 대신 읽는다.
@@ -549,6 +584,7 @@ class PleosSdkManager(
 
         override fun onStop() {
             Log.i(tag, "Pleos TTS onStop")
+            mainHandler.removeCallbacks(pleosTtsWatchdogRunnable)
             lastSpokenText = ""
             abandonSpeechAudioFocus()
             listener.onTtsStateChanged(false, "")
@@ -646,37 +682,43 @@ class PleosSdkManager(
     fun speakAnonymousNote(text: String) {
         lastSpokenText = text
         fallbackUsed = false
+        mainHandler.removeCallbacks(pleosTtsWatchdogRunnable)
         requestSpeechAudioFocus()
         val tts = pleosTts
-        // 이 SDK는 서비스가 연결돼도 onReady를 주지 않는다(실측). 그래서 준비 신호를 기다리지 말고
-        // 일단 Pleos TTS로 읽어 보고, 예외나 onError가 오면 안드로이드 TTS로 한 번만 대신 읽는다.
-        if (tts != null) {
+        // Pleos TTS가 실제로 onReady된 상태일 때만 먼저 호출하고, 450ms 안에 onStart가 오지 않으면
+        // 에뮬레이터/단말에서 음성이 묻히지 않도록 즉시 Android 시스템 TTS로 전환한다.
+        if (tts != null && isPleosTtsReady) {
             val ok = runCatching { tts.speak(text, true) }
                 .onFailure { Log.w(tag, "Pleos TTS speak failed: ${it.message}") }
                 .isSuccess
             if (ok) {
                 Log.i(tag, "TTS Speaking (pleos=true): $text")
                 listener.onTtsStateChanged(true, text)
-                status = status.copy(ttsConnected = true, ttsDetail = "TextToSpeech 3.3.1 (ON_DEVICE 호출 성공)")
-                publishStatus()
+                mainHandler.postDelayed(pleosTtsWatchdogRunnable, 450L)
                 return
             }
         }
+        fallbackUsed = true
         speakWithAndroidTts(text)
     }
 
     private fun speakWithAndroidTts(text: String) {
         listener.onTtsStateChanged(true, text)
         if (isAndroidTtsReady) {
-            runCatching {
+            val res = runCatching {
                 androidTts?.speak(text, AndroidTts.QUEUE_FLUSH, null, "todak_note_tts")
-            }
+            }.getOrDefault(AndroidTts.ERROR)
+            Log.i(tag, "TTS Speaking (android fallback, result=$res): $text")
+        } else {
+            pendingAndroidSpeech = text
+            Log.i(tag, "Android TTS not ready yet; queued speech: $text")
         }
-        Log.i(tag, "TTS Speaking (pleos=false, android fallback): $text")
     }
 
     fun stopSpeaking() {
         // 이 SDK는 onReady를 주지 않아 준비 플래그가 false일 수 있으므로, 조건 없이 항상 멈춘다.
+        mainHandler.removeCallbacks(pleosTtsWatchdogRunnable)
+        pendingAndroidSpeech = null
         lastSpokenText = ""
         runCatching { pleosTts?.stop() }
         runCatching { androidTts?.stop() }

@@ -15,7 +15,7 @@ class SettingsStore(context: Context) {
     )
 
     fun load(): Values = Values(
-        autoPlayTts = prefs.getBoolean(KEY_AUTO_PLAY, false),
+        autoPlayTts = prefs.getBoolean(KEY_AUTO_PLAY, true),
         commuteBandOnly = prefs.getBoolean(KEY_COMMUTE_ONLY, false),
         mapTheme = MapTheme.fromName(prefs.getString(KEY_MAP_THEME, null))
     )

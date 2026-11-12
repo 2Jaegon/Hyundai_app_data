@@ -1,5 +1,16 @@
 package com.example.hyundai.nav
 
+/**
+ * 경로 위에서 도로 쪽지가 놓여 있는 구간(시작 거리 ~ 끝 거리, m).
+ * 지도는 이 구간을 별도의 따뜻한 강조 색상으로 덧칠해 운전자에게 앞쪽에 쪽지가 있음을 알려 준다.
+ */
+data class NoteRouteZone(
+    val noteId: String,
+    val startM: Double,
+    val endM: Double,
+    val isSafety: Boolean = false
+)
+
 /** 화면(지도/주행 HUD)이 그리는 내비 상태. */
 data class NavUiState(
     val hasRoute: Boolean = false,
@@ -11,9 +22,12 @@ data class NavUiState(
     val track: RouteTrack? = null,
     /** 경로 시작점에서 차까지 온 거리(m). */
     val progressM: Double = 0.0,
+    /** 경로 위에서 쪽지가 존재하는 구간 목록. */
+    val noteZones: List<NoteRouteZone> = emptyList(),
     val nextTurn: TurnIcon = TurnIcon.STRAIGHT,
     val distToTurnM: Double = 0.0,
     val remainingM: Double = 0.0,
     val etaSec: Int = 0,
     val arrived: Boolean = false
 )
+
