@@ -54,6 +54,7 @@ fun SimulatorDrawer(
     onToggleGearPark: () -> Unit,
     onDemoNote: (String) -> Unit,
     onCycleMapTheme: () -> Unit,
+    onToggleHeadlamp: () -> Unit = {},
     onStopAtLight: () -> Unit,
     onVoiceApprove: () -> Unit,
     modifier: Modifier = Modifier
@@ -102,6 +103,11 @@ fun SimulatorDrawer(
                         },
                         TodakColors.Neutral,
                         onCycleMapTheme
+                    )
+                    SimButton(
+                        if (state.telemetry.headlampOn) "전조등 ON" else "전조등 OFF",
+                        if (state.telemetry.headlampOn) TodakColors.Good else TodakColors.Neutral,
+                        onToggleHeadlamp
                     )
                 }
             }

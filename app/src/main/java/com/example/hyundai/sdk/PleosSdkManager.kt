@@ -31,18 +31,35 @@ import ai.pleos.playground.navi.helper.listener.NaviHelperEventListener
 import ai.pleos.playground.stt.SpeechToText
 import ai.pleos.playground.stt.constant.ErrorType as SttErrorType
 import ai.pleos.playground.stt.constant.Mode as SttMode
+import ai.pleos.playground.stt.listener.OnServerConnectionListener as SttServerListener
 import ai.pleos.playground.stt.listener.ResultListener as SttResultListener
 import ai.pleos.playground.tts.TextToSpeech
 import ai.pleos.playground.tts.constant.ErrorType as TtsErrorType
 import ai.pleos.playground.tts.constant.Mode as TtsMode
 import ai.pleos.playground.tts.listener.EventListener as TtsEventListener
+import ai.pleos.playground.tts.listener.OnServerConnectionListener as TtsServerListener
 import ai.pleos.playground.vehicle.Vehicle
+import ai.pleos.playground.vehicle.constant.area.TurnSignalValue
+import ai.pleos.playground.vehicle.constant.control.LightState
+import ai.pleos.playground.vehicle.constant.control.VehicleGear
+import ai.pleos.playground.vehicle.listener.BrakePedalStatusListener
+import ai.pleos.playground.vehicle.listener.DistanceDrivenListener
+import ai.pleos.playground.vehicle.listener.GearSelectionListener
+import ai.pleos.playground.vehicle.listener.LightStateListener
+import ai.pleos.playground.vehicle.listener.TurnSignalStateListener
 import android.content.Context
+import android.media.AudioAttributes
+import android.media.AudioFocusRequest
+import android.media.AudioManager
 import android.os.Handler
 import android.os.Looper
 import android.speech.tts.TextToSpeech as AndroidTts
+import android.speech.tts.UtteranceProgressListener
 import android.util.Log
+import com.example.hyundai.domain.VehicleSignalTracker
+import com.example.hyundai.model.GearState
 import com.example.hyundai.model.SdkConnectionStatus
+import com.example.hyundai.model.TurnSignalState
 import com.example.hyundai.nav.RouteRepository
 import com.example.hyundai.nav.TurnIcon
 import com.example.hyundai.nav.TurnMapping
@@ -50,15 +67,17 @@ import java.util.Locale
 
 /**
  * Pleos Connect 5대 공식 SDK 통합 매니저
- * 1. Vehicle SDK (ai.pleos.playground:Vehicle:2.3.2) - Odometer, Brake, TurnSignal, DrivingMode
- * 2. FusedLocation SDK (ai.pleos.playground:FusedLocation:1.1.3) - 실시간 좌표 및 차량 방위각(Heading)
- * 3. TextToSpeech SDK (ai.pleos.playground:TextToSpeech:3.3.1) - 익명 도로 쪽지 음성 재생
- * 4. SpeechToText SDK (ai.pleos.playground:SpeechToText:3.3.1) - 주행 중 10초 핸즈프리 쪽지 녹음
- * 5. NaviHelper SDK (ai.pleos.playground:NaviHelper:3.0.5) - 현재 도로명, 제한속도, 출퇴근 밴드 경로 연동
+ * 1. Vehicle SDK (ai.pleos.playground:Vehicle:2.3.2) - Gear, TurnSignal, Brake, Odometer, Light(전조등) 실시간 리스너 연동
+ * 2. FusedLocation SDK (ai.pleos.playground:FusedLocation:1.1.3) - 실시간 좌표·방위각(Heading) 및 근접 알림
+ * 3. TextToSpeech SDK (ai.pleos.playground:TextToSpeech:3.3.1) - 익명 도로 쪽지 음성 재생 + AudioFocus Ducking + Server/On-Device 지원
+ * 4. SpeechToText SDK (ai.pleos.playground:SpeechToText:3.3.1) - 주행 중 10초 핸즈프리 쪽지 녹음 및 음성 승인 명령 인식
+ * 5. NaviHelper SDK (ai.pleos.playground:NaviHelper:3.0.5) - 현재 도로명, 제한속도, TBT 회전 안내, 목적지 연동
  */
 class PleosSdkManager(
     context: Context,
-    private val listener: Listener
+    private val listener: Listener,
+    private val serverClientId: String = "",
+    private val serverClientSecret: String = ""
 ) {
     interface Listener {
         fun onSdkStatusChanged(status: SdkConnectionStatus)
@@ -75,6 +94,21 @@ class PleosSdkManager(
 
         /** FusedLocation 근접 알림(ENTER/EXIT) 이벤트. */
         fun onProximityTransition(alertId: String, transition: String) {}
+
+        /** Vehicle SDK 실시간 기어(P/R/N/D) 변경 콜백. */
+        fun onVehicleGearChanged(gear: GearState) {}
+
+        /** Vehicle SDK 실시간 방향지시등(OFF/LEFT/RIGHT) 변경 콜백. */
+        fun onVehicleTurnSignalChanged(signal: TurnSignalState) {}
+
+        /** Vehicle SDK 실시간 브레이크 페달 조작 콜백. */
+        fun onVehicleBrakeChanged(pressed: Boolean) {}
+
+        /** Vehicle SDK 실시간 누적 주행거리(km) 콜백. */
+        fun onVehicleOdometerChanged(odometerKm: Double) {}
+
+        /** Vehicle SDK 실시간 전조등(LowBeam) 점등 상태 콜백. */
+        fun onVehicleHeadlampChanged(headlampOn: Boolean) {}
     }
 
     private val appContext = context.applicationContext
@@ -82,8 +116,93 @@ class PleosSdkManager(
 
     private var status = SdkConnectionStatus()
 
-    // 1. Vehicle SDK
+    // --- AudioFocus 관리 (주행 중 라디오/음악 재생 시 쪽지 음성이 또렷하게 들리도록 Ducking 처리) ---
+    private val audioManager: AudioManager? =
+        appContext.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
+    private val audioFocusRequest: AudioFocusRequest = AudioFocusRequest.Builder(
+        AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK
+    ).setAudioAttributes(
+        AudioAttributes.Builder()
+            .setUsage(AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE)
+            .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+            .build()
+    ).setAcceptsDelayedFocusGain(false)
+        .setOnAudioFocusChangeListener { /* Ducking handled by Android Car Audio Service */ }
+        .build()
+
+    private fun requestSpeechAudioFocus() {
+        runCatching { audioManager?.requestAudioFocus(audioFocusRequest) }
+    }
+
+    private fun abandonSpeechAudioFocus() {
+        runCatching { audioManager?.abandonAudioFocusRequest(audioFocusRequest) }
+    }
+
+    // 1. Vehicle SDK & 실시간 차량 신호 리스너
     private var vehicle: Vehicle? = null
+
+    private val gearListener = object : GearSelectionListener {
+        override fun onSelected(gear: VehicleGear?) {
+            if (released || gear == null) return
+            val mapped = VehicleSignalTracker.mapVehicleGear(gear.name)
+            Log.i(tag, "Vehicle Gear updated: ${gear.name} -> $mapped")
+            listener.onVehicleGearChanged(mapped)
+        }
+
+        override fun onFailed(e: Exception) {
+            Log.w(tag, "Vehicle Gear listener failed: ${e.message}")
+        }
+    }
+
+    private val turnSignalListener = object : TurnSignalStateListener {
+        override fun onTurnSignalStateUpdated(state: TurnSignalValue?) {
+            if (released || state == null) return
+            val mapped = VehicleSignalTracker.mapTurnSignal(state.name)
+            Log.i(tag, "Vehicle TurnSignal updated: ${state.name} -> $mapped")
+            listener.onVehicleTurnSignalChanged(mapped)
+        }
+
+        override fun onFailed(e: Exception) {
+            Log.w(tag, "Vehicle TurnSignal listener failed: ${e.message}")
+        }
+    }
+
+    private val brakeListener = object : BrakePedalStatusListener {
+        override fun onBrakePedalStatusUpdated(status: Boolean?) {
+            if (released || status == null) return
+            Log.i(tag, "Vehicle BrakePedal updated: $status")
+            listener.onVehicleBrakeChanged(status)
+        }
+
+        override fun onFailed(e: Exception) {
+            Log.w(tag, "Vehicle BrakePedal listener failed: ${e.message}")
+        }
+    }
+
+    private val distanceListener = object : DistanceDrivenListener {
+        override fun onDistanceDrivenUpdated(value: Float?) {
+            if (released || value == null || !value.isFinite()) return
+            Log.i(tag, "Vehicle Odometer updated: $value km")
+            listener.onVehicleOdometerChanged(value.toDouble())
+        }
+
+        override fun onFailed(e: Exception) {
+            Log.w(tag, "Vehicle DistanceDriven listener failed: ${e.message}")
+        }
+    }
+
+    private val lowBeamLightListener = object : LightStateListener {
+        override fun onLightStateUpdated(state: LightState?) {
+            if (released || state == null) return
+            val isOn = VehicleSignalTracker.isHeadlampOn(state.name)
+            Log.i(tag, "Vehicle LowBeam updated: ${state.name} (headlampOn=$isOn)")
+            listener.onVehicleHeadlampChanged(isOn)
+        }
+
+        override fun onFailed(e: Exception) {
+            Log.w(tag, "Vehicle LowBeam listener failed: ${e.message}")
+        }
+    }
 
     // 2. FusedLocation SDK
     private var fusedLocation: FusedLocation? = null
@@ -212,15 +331,61 @@ class PleosSdkManager(
         try {
             val v = Vehicle(appContext)
             v.initialize()
-            // Verify domain linkage: Odometer, Brake, TurnSignal
-            v.getOdometer()
-            v.getBrake()
-            v.getTurnSignal()
             vehicle = v
-            // initialize()가 예외 없이 끝난 것뿐, 실제 차량 값을 받는지는 아직 확인하지 않았다.
+
+            // 1) 실시간 기어(P/R/N/D) 조회 및 리스너 등록
+            runCatching {
+                val gearApi = v.getGear()
+                gearApi.getCurrentGearSelectionState(
+                    onComplete = { g -> g?.let { gearListener.onSelected(it) } },
+                    onFailed = { e -> Log.w(tag, "getCurrentGearSelectionState failed: ${e.message}") }
+                )
+                gearApi.registerGearSelection(gearListener)
+            }
+
+            // 2) 실시간 방향지시등(OFF/LEFT/RIGHT) 조회 및 리스너 등록
+            runCatching {
+                val turnApi = v.getTurnSignal()
+                turnApi.getCurrentTurnSignalState(
+                    onComplete = { s -> s?.let { turnSignalListener.onTurnSignalStateUpdated(it) } },
+                    onFailed = { e -> Log.w(tag, "getCurrentTurnSignalState failed: ${e.message}") }
+                )
+                turnApi.registerTurnSignalState(turnSignalListener)
+            }
+
+            // 3) 실시간 브레이크 페달 조작 조회 및 리스너 등록
+            runCatching {
+                val brakeApi = v.getBrake()
+                brakeApi.getCurrentBrakePedalStatus(
+                    onComplete = { b -> b?.let { brakeListener.onBrakePedalStatusUpdated(it) } },
+                    onFailed = { e -> Log.w(tag, "getCurrentBrakePedalStatus failed: ${e.message}") }
+                )
+                brakeApi.registerBrakePedalStatus(brakeListener)
+            }
+
+            // 4) 실시간 주행거리(Odometer km) 조회 및 리스너 등록
+            runCatching {
+                val odoApi = v.getOdometer()
+                odoApi.getCurrentDistanceDriven(
+                    onComplete = { d -> d?.let { distanceListener.onDistanceDrivenUpdated(it) } },
+                    onFailed = { e -> Log.w(tag, "getCurrentDistanceDriven failed: ${e.message}") }
+                )
+                odoApi.registerDistanceDriven(distanceListener)
+            }
+
+            // 5) 실시간 전조등(LowBeam) 점등 상태 조회 및 리스너 등록 (주/야간 지도 자동 연동)
+            runCatching {
+                val lightApi = v.getLight()
+                lightApi.getCurrentLowBeamLightState(
+                    onComplete = { l -> l?.let { lowBeamLightListener.onLightStateUpdated(it) } },
+                    onFailed = { e -> Log.w(tag, "getCurrentLowBeamLightState failed: ${e.message}") }
+                )
+                lightApi.registerLowBeamLightState(lowBeamLightListener)
+            }
+
             status = status.copy(
                 vehicleConnected = true,
-                vehicleDetail = "Vehicle 2.3.2 (초기화 호출 성공 · 차량 값은 아직 사용 안 함)"
+                vehicleDetail = "Vehicle 2.3.2 (Gear·TurnSignal·Brake·Odometer·Light 실시간 연동)"
             )
         } catch (e: Throwable) {
             Log.w(tag, "Vehicle SDK init failed: ${e.message}")
@@ -280,17 +445,46 @@ class PleosSdkManager(
             androidTts = AndroidTts(appContext) { code ->
                 if (code == AndroidTts.SUCCESS) {
                     androidTts?.language = Locale.KOREAN
+                    androidTts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+                        override fun onStart(utteranceId: String?) {}
+                        override fun onDone(utteranceId: String?) {
+                            abandonSpeechAudioFocus()
+                            listener.onTtsStateChanged(false, "")
+                        }
+                        @Deprecated("Deprecated in Java")
+                        override fun onError(utteranceId: String?) {
+                            abandonSpeechAudioFocus()
+                            listener.onTtsStateChanged(false, "")
+                        }
+                    })
                     isAndroidTtsReady = true
                 }
             }
         }
         try {
-            val tts = TextToSpeech(appContext, TtsMode.ON_DEVICE)
+            val useServer = serverClientId.isNotBlank() && serverClientSecret.isNotBlank()
+            val ttsMode = if (useServer) TtsMode.SERVER else TtsMode.ON_DEVICE
+            val tts = TextToSpeech(appContext, ttsMode)
             pleosTts = tts
-            status = status.copy(ttsConnected = false, ttsDetail = "TextToSpeech 3.3.1 (연결 중…)")
+            status = status.copy(ttsConnected = false, ttsDetail = "TextToSpeech 3.3.1 (${ttsMode.name} 연결 중…)")
             // initialize(리스너) 버전은 이 SDK에서 내부 lateinit 오류(실측)가 나서, 리스너 없는 initialize()를 쓴다.
-            // 준비 완료는 이벤트 리스너의 onReady로 받는다.
             tts.initialize()
+            if (useServer) {
+                runCatching {
+                    tts.registerApp(
+                        serverClientId,
+                        serverClientSecret,
+                        object : TtsServerListener {
+                            override fun onConnected() {
+                                Log.i(tag, "Pleos TTS Server connected")
+                            }
+                            override fun onFailed(errorType: TtsErrorType) {
+                                Log.w(tag, "Pleos TTS Server connection failed: $errorType")
+                            }
+                        }
+                    )
+                }
+            }
             attachTtsListener(tts, attempt = 0)
         } catch (e: Throwable) {
             Log.w(tag, "Pleos TTS init failed", e)
@@ -327,13 +521,14 @@ class PleosSdkManager(
         override fun onReady() {
             Log.i(tag, "Pleos TTS onReady")
             isPleosTtsReady = true
-            status = status.copy(ttsConnected = true, ttsDetail = "TextToSpeech 3.3.1 (ON_DEVICE 준비 완료)")
+            status = status.copy(ttsConnected = true, ttsDetail = "TextToSpeech 3.3.1 (준비 완료)")
             publishStatus()
         }
 
         override fun onDone() {
             Log.i(tag, "Pleos TTS onDone")
             lastSpokenText = ""
+            abandonSpeechAudioFocus()
             listener.onTtsStateChanged(false, "")
         }
 
@@ -347,6 +542,7 @@ class PleosSdkManager(
                 fallbackUsed = true
                 speakWithAndroidTts(text)
             } else {
+                abandonSpeechAudioFocus()
                 listener.onTtsStateChanged(false, "")
             }
         }
@@ -354,6 +550,7 @@ class PleosSdkManager(
         override fun onStop() {
             Log.i(tag, "Pleos TTS onStop")
             lastSpokenText = ""
+            abandonSpeechAudioFocus()
             listener.onTtsStateChanged(false, "")
         }
 
@@ -362,14 +559,32 @@ class PleosSdkManager(
 
     private fun initSttSdk() {
         try {
-            val stt = SpeechToText(appContext, SttMode.ON_DEVICE)
+            val useServer = serverClientId.isNotBlank() && serverClientSecret.isNotBlank()
+            val sttMode = if (useServer) SttMode.SERVER else SttMode.ON_DEVICE
+            val stt = SpeechToText(appContext, sttMode)
             stt.addListener(sttResultListener)
             stt.initialize()
+            if (useServer) {
+                runCatching {
+                    stt.registerApp(
+                        serverClientId,
+                        serverClientSecret,
+                        object : SttServerListener {
+                            override fun onConnected() {
+                                Log.i(tag, "Pleos STT Server connected")
+                            }
+                            override fun onFailed(errorType: SttErrorType) {
+                                Log.w(tag, "Pleos STT Server connection failed: $errorType")
+                            }
+                        }
+                    )
+                }
+            }
             // 온디바이스 STT 서비스는 국가가 없는 "ko"를 unsupported locale로 거부한다(실측). ko_KR을 써야 한다.
             runCatching { stt.setLocale(Locale.KOREA) }
             pleosStt = stt
             // 엔진이 실제로 준비되면(onReady) 그때 연결됨으로 표시한다.
-            status = status.copy(sttConnected = false, sttDetail = "SpeechToText 3.3.1 (연결 중…)")
+            status = status.copy(sttConnected = false, sttDetail = "SpeechToText 3.3.1 (${sttMode.name} 연결 중…)")
         } catch (e: Throwable) {
             Log.w(tag, "Pleos STT init failed: ${e.message}")
             status = status.copy(sttConnected = false, sttDetail = "SpeechToText 3.3.1 초기화 실패: ${e.message}")
@@ -390,15 +605,17 @@ class PleosSdkManager(
 
         override fun onEndedRecognition() {
             Log.i(tag, "Pleos STT onEndedRecognition")
+            abandonSpeechAudioFocus()
         }
 
         override fun onError(error: SttErrorType) {
             Log.w(tag, "Pleos STT onError: $error")
+            abandonSpeechAudioFocus()
         }
 
         override fun onReady() {
             Log.i(tag, "Pleos STT onReady")
-            status = status.copy(sttConnected = true, sttDetail = "SpeechToText 3.3.1 (ON_DEVICE 준비 완료)")
+            status = status.copy(sttConnected = true, sttDetail = "SpeechToText 3.3.1 (준비 완료)")
             publishStatus()
         }
 
@@ -429,6 +646,7 @@ class PleosSdkManager(
     fun speakAnonymousNote(text: String) {
         lastSpokenText = text
         fallbackUsed = false
+        requestSpeechAudioFocus()
         val tts = pleosTts
         // 이 SDK는 서비스가 연결돼도 onReady를 주지 않는다(실측). 그래서 준비 신호를 기다리지 말고
         // 일단 Pleos TTS로 읽어 보고, 예외나 onError가 오면 안드로이드 TTS로 한 번만 대신 읽는다.
@@ -462,31 +680,43 @@ class PleosSdkManager(
         lastSpokenText = ""
         runCatching { pleosTts?.stop() }
         runCatching { androidTts?.stop() }
+        abandonSpeechAudioFocus()
         listener.onTtsStateChanged(false, "")
     }
 
     fun startVoiceNoteCapture() {
+        requestSpeechAudioFocus()
         runCatching { pleosStt?.request() }
             .onSuccess {
                 // onReady를 주지 않는 SDK라서, 요청 호출이 예외 없이 끝난 것을 연결 신호로 본다.
                 status = status.copy(sttConnected = true, sttDetail = "SpeechToText 3.3.1 (ON_DEVICE 요청 성공)")
                 publishStatus()
             }
-            .onFailure { Log.w(tag, "Pleos STT request failed: ${it.message}") }
+            .onFailure {
+                abandonSpeechAudioFocus()
+                Log.w(tag, "Pleos STT request failed: ${it.message}")
+            }
     }
 
     fun stopVoiceNoteCapture() {
         runCatching { pleosStt?.stop() }
+        abandonSpeechAudioFocus()
     }
 
     fun releaseAll() {
         released = true
         mainHandler.removeCallbacksAndMessages(null)
+        abandonSpeechAudioFocus()
         proximityAlertId?.let { id -> runCatching { fusedLocation?.removeProximityAlert(id) } }
         runCatching { fusedLocation?.unregisterFusedLocationCallback(fusedLocationListener) }
         runCatching { fusedLocation?.release() }
         runCatching { naviHelper?.removeListener(naviListener) }
         runCatching { naviHelper?.release() }
+        runCatching { vehicle?.getGear()?.unregisterGearSelection(gearListener) }
+        runCatching { vehicle?.getTurnSignal()?.unregisterTurnSignalState(turnSignalListener) }
+        runCatching { vehicle?.getBrake()?.unregisterBrakePedalStatus(brakeListener) }
+        runCatching { vehicle?.getOdometer()?.unregisterDistanceDriven(distanceListener) }
+        runCatching { vehicle?.getLight()?.unregisterLowBeamLightState(lowBeamLightListener) }
         runCatching { vehicle?.release() }
         runCatching { pleosTts?.removeEventListener(ttsEventListener) }
         runCatching { pleosTts?.release() }

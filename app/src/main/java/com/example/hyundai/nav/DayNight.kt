@@ -8,14 +8,18 @@ import kotlin.math.pow
 import kotlin.math.sin
 import kotlin.math.tan
 
-/** 지도 색 모드. 자동은 해가 떠 있는지로 낮/밤을 고른다. */
+/** 지도 색 모드. 자동은 차량 전조등(LowBeam)이 켜져 있으면 즉시 밤으로, 아니면 해가 떠 있는지로 낮/밤을 고른다. */
 enum class MapTheme {
     AUTO, DAY, NIGHT;
 
-    fun isDay(position: GeoPoint, epochMillis: Long): Boolean = when (this) {
+    fun isDay(
+        position: GeoPoint,
+        epochMillis: Long,
+        headlampOn: Boolean = false
+    ): Boolean = when (this) {
         DAY -> true
         NIGHT -> false
-        AUTO -> DayNight.isDaytime(position, epochMillis)
+        AUTO -> if (headlampOn) false else DayNight.isDaytime(position, epochMillis)
     }
 
     /** 시연용으로 자동 → 낮 → 밤 순서로 돌린다. */

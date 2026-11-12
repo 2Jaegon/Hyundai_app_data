@@ -9,23 +9,24 @@
 
 ## 🌟 1. 온길 (On-Gil) 인카 앱 핵심 기능
 
-1. **텍스트 최소화 3D 내비게이션 주행 화면**
-   - 어두운 3D 입체 건물 지도 위로 주행 경로만 밝게 강조
-   - 태양 고도(NOAA) 기반 **주간(회청색) / 야간(다크) 지도 자동 전환**
+1. **고정 시야 3D 내비게이션 주행 화면 & 전조등 연동 주/야간 전환**
+   - 고정 시야(`18.2` 줌, 3D 건물 최대 `18m` 캡) 입체 지도 위로 주행 경로만 밝게 강조 및 지나간 경로선 실시간 트리밍(`RouteWindow`)
+   - 태양 고도(NOAA) 계산 + **차량 전조등(`Light.registerLowBeamLightState`) 점등 신호** 기반 **주간(회청색) / 야간(다크) 지도 자동 전환**
    - 시선 분산을 최소화한 턴바이턴(TBT) 안내 카드와 남은 시간/거리 표시
 
-2. **부드러운 일러스트 펫 '제로(Zero)'**
-   - 차량 내 실시간 동행 캐릭터
-   - 성장 단계(Lv.1 기본 → Lv.2 목도리 → Lv.3 볼터치 → Lv.4 왕관)별 시각적 보상
-   - 쪽지 수신 시 **쪽지를 양손에 들고 경청하는 애니메이션**
+2. **애니메이션 마스코트 캐릭터 '제로(Zero)'**
+   - 듀얼 캐치라이트 눈망울, 그라데이션 털, 살랑이는 귀·꼬리를 갖춘 차량 내 실시간 동행 강아지 캐릭터
+   - 성장 단계(Lv.1 기본 목걸이 → Lv.2 방울 머플러 → Lv.3 발그레한 볼터치 → Lv.4 황금 왕관)별 시각적 보상
+   - 쪽지 수신 시 **쪽지를 양손에 들고 경청하는 애니메이션** 및 도로·전조등·주행 맥락 맞춤형 대사(`GleoAiAssistant`)
 
-3. **도로 위 익명 음성 쪽지 (10초 핸즈프리)**
-   - 주행 중 음성으로만 안전하게 작성 (텍스트 입력 차단)
+3. **도로 위 익명 음성 쪽지 (10초 핸즈프리 & 오디오 포커스 Ducking)**
+   - 주행 중 음성으로만 안전하게 작성 및 핸즈프리 음성 명령(`"응 들려줘"`, `"좋아요"`, `"그만"`)으로 제어
    - AI 실시간 안전 검증, 개인정보(차량번호/연락처) 마스킹, 비방 차단 및 다정 순화
-   - **진행 방향 ±45° 이내 운전자에게만 재생**하여 반대 차선 혼선 방지
-   - 1-Tap '좋아요' 피드백 및 쪽지 수명 연장
+   - **진행 방향 ±45° 이내 운전자에게만 재생**하여 반대 차선 혼선 방지 및 차량 미디어 자동 볼륨 낮춤(Ducking)
+   - 1-Tap / 음성 '좋아요' 피드백 및 쪽지 수명 연장
 
-4. **어뷰징 방지 3대 안전·매너운전 평가 엔진 (무감점 긍정 강화)**
+4. **실시간 차량 신호 기반 어뷰징 방지 3대 안전·매너운전 평가 엔진 (무감점 긍정 강화)**
+   - **실시간 차량 연동**: `Vehicle SDK`(기어·방향지시등·브레이크·주행거리·전조등) 및 `FusedLocation`($\Delta d / \Delta t$ 속도·가속도 산출) 실시간 바인딩
    - **Safe Drive**: 1.0km 안정 주행 완주 시마다 +10 EXP / +5 P
    - **Smooth Drive**: 2.0km 무급가감속 완주 시 +20 EXP / +10 P (급제동 시 감점 없이 보너스만 리셋)
    - **Manner Drive**: 깜빡이 1.5초 유지 + 실제 방위각 25° 이상 회전/차선변경 + 45초 쿨타임 충족 시에만 인정 (**단순 점멸 어뷰징 차단**)
@@ -43,11 +44,11 @@
 - **UI 프레임워크**: Jetpack Compose (BOM 2024.04.01), Material 3
 - **지도 엔진**: MapLibre Native Android 11.13.5 (OpenFreeMap 3D Vector Tiles + AWS Terrarium DEM Hillshade)
 - **Pleos Connect SDKs**:
-  - `ai.pleos.playground:Vehicle:2.3.2`
-  - `ai.pleos.playground:FusedLocation:1.1.3`
-  - `ai.pleos.playground:NaviHelper:3.0.5`
-  - `ai.pleos.playground:TextToSpeech:3.3.1`
-  - `ai.pleos.playground:SpeechToText:3.3.1`
+  - `ai.pleos.playground:Vehicle:2.3.2` (Gear, TurnSignal, Brake, Odometer, Light 실시간 리스너)
+  - `ai.pleos.playground:FusedLocation:1.1.3` (실시간 좌표·방위각·근접알림 및 속도 산출)
+  - `ai.pleos.playground:NaviHelper:3.0.5` (TBT 회전 안내·도로명·제한속도·목적지 연동)
+  - `ai.pleos.playground:TextToSpeech:3.3.1` (익명 쪽지 TTS + AudioFocus Ducking + Server/On-Device)
+  - `ai.pleos.playground:SpeechToText:3.3.1` (10초 음성 쪽지 녹음 및 주행 중 음성 명령 인식)
 - **프로젝트 상세 계획서**: [PROJECT_PLAN.md](PROJECT_PLAN.md)
 
 ---

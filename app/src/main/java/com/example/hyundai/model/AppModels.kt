@@ -34,6 +34,7 @@ data class VehicleTelemetry(
     val brakePressed: Boolean = false,
     val turnSignal: TurnSignalState = TurnSignalState.OFF,
     val gear: GearState = GearState.D,
+    val headlampOn: Boolean = false,
     val headingDeg: Float = 85f, // 동쪽(성수대교/강변북로 방향)
     val latitude: Double = 37.5445,
     val longitude: Double = 127.0440,

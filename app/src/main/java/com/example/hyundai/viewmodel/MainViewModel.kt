@@ -6,9 +6,11 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.hyundai.data.SettingsStore
 import com.example.hyundai.domain.AiNoteModerator
+import com.example.hyundai.domain.GleoAiAssistant
 import com.example.hyundai.domain.MannerEvaluationEngine
 import com.example.hyundai.domain.NoteAccess
 import com.example.hyundai.domain.NoteInbox
+import com.example.hyundai.domain.VehicleSignalTracker
 import com.example.hyundai.model.AppScreen
 import com.example.hyundai.model.DrivingEvaluationState
 import com.example.hyundai.model.GearState
@@ -88,6 +90,7 @@ class MainViewModel(application: Application) :
     val uiState: StateFlow<AppUiState> = _uiState.asStateFlow()
 
     private val evaluationEngine = MannerEvaluationEngine()
+    private val signalTracker = VehicleSignalTracker()
     private val sdkManager = PleosSdkManager(application, this)
     private val settingsStore = SettingsStore(application)
 
@@ -294,19 +297,152 @@ class MainViewModel(application: Application) :
             }
             realLocationSeen = true
             progressM = data.track.project(here)
+
+            val nowMs = SystemClock.elapsedRealtime()
+            val curState = _uiState.value
+            val speedSample = signalTracker.onLocationSample(
+                lat = lat,
+                lng = lng,
+                timestampMs = nowMs,
+                brakePressed = curState.telemetry.brakePressed
+            )
+            val effectiveSpeed = speedKmh ?: speedSample?.speedKmh ?: curState.telemetry.speedKmh
+            val effectiveHeading = headingDeg ?: curState.telemetry.headingDeg
+
+            var updatedTelemetry = curState.telemetry.copy(
+                latitude = lat,
+                longitude = lng,
+                // 정차/저속에서는 방위각을 모르므로 이전 값을 유지해 지도가 휙 돌지 않게 한다.
+                headingDeg = effectiveHeading,
+                speedKmh = effectiveSpeed
+            )
+
+            // 1) 급가속/급제동 실시간 감지 및 Smooth 보너스 평가
+            if (speedSample != null && (speedSample.isHarshBrake || speedSample.isHarshAccel)) {
+                val harshStep = evaluationEngine.onHarshDrivingDetected(
+                    currentState = _uiState.value.evaluation,
+                    isHarshBrake = speedSample.isHarshBrake,
+                    deltaSpeedKmhPerSec = speedSample.accelKmhPerSec
+                )
+                applyEvaluationResult(harshStep, updatedTelemetry)
+            } else if (speedSample != null && speedSample.deltaKm > 0f) {
+                // Odometer 콜백이 오지 않는 환경에서도 실제 GPS 이동 거리로 Safe/Smooth 구간을 누적한다.
+                val distStep = evaluationEngine.onDistanceDriven(
+                    currentState = _uiState.value.evaluation,
+                    deltaKm = speedSample.deltaKm,
+                    currentSpeedKmh = effectiveSpeed
+                )
+                updatedTelemetry = updatedTelemetry.copy(
+                    odometerKm = updatedTelemetry.odometerKm + speedSample.deltaKm,
+                    sessionDrivenKm = updatedTelemetry.sessionDrivenKm + speedSample.deltaKm
+                )
+                applyEvaluationResult(distStep, updatedTelemetry)
+            } else {
+                _uiState.update { it.copy(telemetry = updatedTelemetry) }
+            }
+
+            // 2) 방향지시등이 켜져 있는 동안 방위각 변화(>= 25°) 실시간 검증
+            val activeSig = _uiState.value.telemetry.turnSignal
+            if (activeSig == TurnSignalState.LEFT || activeSig == TurnSignalState.RIGHT) {
+                val heldSec = signalTracker.currentSignalHoldSeconds(nowMs)
+                val turnStep = evaluationEngine.onTurnSignalAndHeadingChanged(
+                    currentState = _uiState.value.evaluation,
+                    newSignal = activeSig,
+                    currentHeadingDeg = effectiveHeading,
+                    holdDurationSec = heldSec
+                )
+                applyEvaluationResult(turnStep, _uiState.value.telemetry)
+            }
+
+            publishNav()
+            presentNextNoteIfIdle()
+        }
+    }
+
+    override fun onVehicleGearChanged(gear: GearState) {
+        viewModelScope.launch {
+            shiftGear(gear)
+        }
+    }
+
+    override fun onVehicleTurnSignalChanged(signal: TurnSignalState) {
+        viewModelScope.launch {
+            val nowMs = SystemClock.elapsedRealtime()
+            val heldSec = signalTracker.onTurnSignalChanged(signal, nowMs)
+            val current = _uiState.value
+            val step = evaluationEngine.onTurnSignalAndHeadingChanged(
+                currentState = current.evaluation,
+                newSignal = signal,
+                currentHeadingDeg = current.telemetry.headingDeg,
+                holdDurationSec = heldSec
+            )
+            applyEvaluationResult(
+                stepResult = step,
+                newTelemetry = current.telemetry.copy(turnSignal = signal)
+            )
+        }
+    }
+
+    override fun onVehicleBrakeChanged(pressed: Boolean) {
+        viewModelScope.launch {
             _uiState.update { state ->
-                state.copy(
-                    telemetry = state.telemetry.copy(
-                        latitude = lat,
-                        longitude = lng,
-                        // 정차/저속에서는 방위각을 모르므로 이전 값을 유지해 지도가 휠 돌지 않게 한다.
-                        headingDeg = headingDeg ?: state.telemetry.headingDeg,
-                        speedKmh = speedKmh ?: state.telemetry.speedKmh
+                state.copy(telemetry = state.telemetry.copy(brakePressed = pressed))
+            }
+        }
+    }
+
+    override fun onVehicleOdometerChanged(odometerKm: Double) {
+        viewModelScope.launch {
+            val deltaKm = signalTracker.onOdometerUpdated(odometerKm)
+            val current = _uiState.value
+            if (deltaKm > 0f) {
+                val step = evaluationEngine.onDistanceDriven(
+                    currentState = current.evaluation,
+                    deltaKm = deltaKm,
+                    currentSpeedKmh = current.telemetry.speedKmh
+                )
+                applyEvaluationResult(
+                    stepResult = step,
+                    newTelemetry = current.telemetry.copy(
+                        odometerKm = odometerKm,
+                        sessionDrivenKm = current.telemetry.sessionDrivenKm + deltaKm
                     )
                 )
+                presentNextNoteIfIdle()
+            } else {
+                _uiState.update { state ->
+                    state.copy(telemetry = state.telemetry.copy(odometerKm = odometerKm))
+                }
             }
-            publishNav()
         }
+    }
+
+    override fun onVehicleHeadlampChanged(headlampOn: Boolean) {
+        viewModelScope.launch {
+            _uiState.update { state ->
+                val newTelemetry = state.telemetry.copy(headlampOn = headlampOn)
+                val speech = GleoAiAssistant.generateContextualPetSpeech(
+                    roadName = newTelemetry.roadName,
+                    speedKmh = newTelemetry.speedKmh,
+                    gear = newTelemetry.gear,
+                    isNightOrHeadlampOn = headlampOn
+                )
+                state.copy(
+                    telemetry = newTelemetry,
+                    pet = state.pet.copy(currentSpeech = speech),
+                    toastBanner = if (headlampOn) {
+                        "차량 전조등(LowBeam) ON 감지 · 자동 야간 지도로 전환합니다."
+                    } else {
+                        "차량 전조등 OFF 감지 · 주간/태양고도 기준 지도로 복귀합니다."
+                    }
+                )
+            }
+        }
+    }
+
+    /** 시연용: 차량 전조등(LowBeam) ON/OFF 토글 */
+    fun toggleHeadlampSimulation() {
+        onVehicleHeadlampChanged(!_uiState.value.telemetry.headlampOn)
     }
 
     override fun onNaviRoadUpdated(roadName: String?, speedLimitKmh: Int?) {
@@ -321,12 +457,44 @@ class MainViewModel(application: Application) :
     }
 
     override fun onSttResult(recognizedText: String) {
-        val result = AiNoteModerator.analyzeAndFilter(recognizedText)
-        _uiState.update {
-            it.copy(
-                draftVoiceText = recognizedText,
-                lastModerationResult = result
+        viewModelScope.launch {
+            val state = _uiState.value
+            val intent = GleoAiAssistant.parseVoiceCommand(
+                utterance = recognizedText,
+                isComposeDialogOpen = state.showVoiceComposeDialog,
+                hasIncomingOrHeldNote = state.activeIncomingNote != null || state.heldNote != null,
+                isSpeakingTts = state.isTtsSpeaking
             )
+            when (intent) {
+                GleoAiAssistant.VoiceCommandIntent.APPROVE_LISTEN -> {
+                    approveIncomingNoteByVoice()
+                    return@launch
+                }
+                GleoAiAssistant.VoiceCommandIntent.SEND_LIKE -> {
+                    val targetId = state.heldNote?.id ?: state.activeIncomingNote?.id
+                    if (targetId != null) {
+                        sendTodakReaction(targetId)
+                        return@launch
+                    }
+                }
+                GleoAiAssistant.VoiceCommandIntent.STOP_OR_SKIP -> {
+                    stopTtsPlayback()
+                    return@launch
+                }
+                GleoAiAssistant.VoiceCommandIntent.START_COMPOSE -> {
+                    openVoiceNoteComposer(force = true)
+                    return@launch
+                }
+                GleoAiAssistant.VoiceCommandIntent.NOTE_DICTATION -> Unit
+            }
+
+            val result = AiNoteModerator.analyzeAndFilter(recognizedText)
+            _uiState.update {
+                it.copy(
+                    draftVoiceText = recognizedText,
+                    lastModerationResult = result
+                )
+            }
         }
     }
 

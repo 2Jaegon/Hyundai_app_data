@@ -66,7 +66,7 @@ fun DriveScreen(
     /** 미리보기처럼 지도를 대신할 때만 넘긴다. */
     map: (@Composable (Modifier) -> Unit)? = null
 ) {
-    val isDay = rememberIsDay(state.mapTheme, state.nav.carPosition)
+    val isDay = rememberIsDay(state.mapTheme, state.nav.carPosition, state.telemetry.headlampOn)
     Box(modifier = modifier.fillMaxSize()) {
         if (map != null) {
             map(Modifier.fillMaxSize())
@@ -132,18 +132,19 @@ private fun StoppedAction(text: String, onClick: () -> Unit) {
 }
 
 /**
- * 지도가 낮인지 밤인지. 자동일 때는 차 위치의 해가 뜨었는지 1분마다 다시 확인해, 주행 중에 해가 지면 저절로 밤 지도로 바뀐다.
+ * 지도가 낮인지 밤인지. 자동일 때는 차량 전조등 점등 여부와 차 위치의 해가 떴는지를 함께 확인해,
+ * 터널·야간에 전조등이 켜지거나 해가 지면 저절로 밤 지도로 바뀐다.
  */
 @Composable
-private fun rememberIsDay(theme: MapTheme, position: GeoPoint): Boolean {
-    // 시각만 1분마다 갱신하고, 판정은 테마나 위치가 바뀔 때마다 바로 다시 한다(계산이 가벼운다).
+private fun rememberIsDay(theme: MapTheme, position: GeoPoint, headlampOn: Boolean): Boolean {
+    // 시각만 1분마다 갱신하고, 판정은 테마·전조등·위치가 바뀔 때마다 바로 다시 한다(계산이 가볍다).
     val nowMs by produceState(initialValue = System.currentTimeMillis()) {
         while (true) {
             delay(60_000L)
             value = System.currentTimeMillis()
         }
     }
-    return remember(theme, position, nowMs) { theme.isDay(position, nowMs) }
+    return remember(theme, position, nowMs, headlampOn) { theme.isDay(position, nowMs, headlampOn) }
 }
 
 @Composable

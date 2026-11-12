@@ -180,6 +180,7 @@ fun TodakGilDashboard(
                     viewModel.selectVoicePresetForAiTest(text)
                 },
                 onCycleMapTheme = viewModel::cycleMapTheme,
+                onToggleHeadlamp = viewModel::toggleHeadlampSimulation,
                 onStopAtLight = viewModel::simulateStopAtLight,
                 onVoiceApprove = viewModel::approveIncomingNoteByVoice,
                 modifier = Modifier.align(Alignment.BottomCenter)
