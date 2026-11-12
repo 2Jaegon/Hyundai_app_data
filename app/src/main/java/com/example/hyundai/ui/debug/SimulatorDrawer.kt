@@ -57,6 +57,7 @@ fun SimulatorDrawer(
     onToggleHeadlamp: () -> Unit = {},
     onStopAtLight: () -> Unit,
     onVoiceApprove: () -> Unit,
+    onRestartSimulation: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var open by remember { mutableStateOf(false) }
@@ -109,6 +110,7 @@ fun SimulatorDrawer(
                         if (state.telemetry.headlampOn) TodakColors.Good else TodakColors.Neutral,
                         onToggleHeadlamp
                     )
+                    SimButton("시뮬레이션 재시작", TodakColors.Danger, onRestartSimulation)
                 }
             }
         }

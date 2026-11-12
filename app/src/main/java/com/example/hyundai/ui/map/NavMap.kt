@@ -67,11 +67,11 @@ private const val NOTE_ZONE_GLOW_LAYER = "todak-note-zone-glow"
 private const val NOTE_ZONE_LINE_LAYER = "todak-note-zone-line"
 private const val NOTE_ZONE_CORE_LAYER = "todak-note-zone-core"
 
-/** 기울기를 낮추고 더 가깝게 봐서, 차 앞 가까운 길만 크게 보이게 한다. */
-private const val CAMERA_TILT = 45.0
+/** 기울기를 32°로 완만하게 고정해 주변 건물이나 지형에 의해 시야가 들썩이지 않게 한다. */
+private const val CAMERA_TILT = 32.0
 
-/** 건물 높이나 교차로 거리에 상관없이 시야 높이를 일정하게 유지하는 고정 줌 레벨. */
-internal const val FIXED_CAMERA_ZOOM = 18.2
+/** 건물 높이나 교차로 거리에 상관없이 시야 높이를 항상 동일하게 유지하는 고정 줌 레벨. */
+internal const val FIXED_CAMERA_ZOOM = 17.8
 
 /** 위치가 1초마다 갱신되므로, 카메라도 1초에 걸쳐 일정한 속도로 이어서 움직인다. */
 private const val CAMERA_TWEEN_MS = 1000.0
@@ -82,7 +82,6 @@ private const val CAMERA_TOP_PADDING_FRACTION = 0.46
 private data class CameraPose(
     val position: GeoPoint,
     val bearing: Double,
-    val zoom: Double,
     /** 경로가 바뀌었는지 알아보는 용도(참조 비교). 바뀌면 보간하지 않고 바로 맞춘다. */
     val track: RouteTrack?,
     /** 경로선을 어디까지 지울지. 카메라와 같은 속도로 이어서 움직인다. */
@@ -90,7 +89,7 @@ private data class CameraPose(
 )
 
 private fun poseOf(nav: NavUiState) =
-    CameraPose(nav.carPosition, nav.carBearing.toDouble(), FIXED_CAMERA_ZOOM, nav.track, nav.progressM)
+    CameraPose(nav.carPosition, nav.carBearing.toDouble(), nav.track, nav.progressM)
 
 /** 줌에 따라 같은 비율로 두께가 커지는 선 두께 (도로 폭과 맞춘다). */
 private fun zoomWidth(at17: Float, at19: Float): Expression =
@@ -168,6 +167,11 @@ fun NavMap(
                 isAttributionEnabled = true
                 attributionGravity = Gravity.BOTTOM or Gravity.END
             }
+            // 카메라 시야 높이(Zoom)와 기울기(Pitch)를 엔진 레벨에서 완전히 잠가 어떤 상황에서도 출렁이지 않게 한다.
+            m.setMinZoomPreference(FIXED_CAMERA_ZOOM)
+            m.setMaxZoomPreference(FIXED_CAMERA_ZOOM)
+            m.setMinPitchPreference(CAMERA_TILT)
+            m.setMaxPitchPreference(CAMERA_TILT)
             map = m
         }
         // 고도 타일 형식을 못 읽으면 플래그만 켜고, 실제 다시 불러오는 일은 아래 효과가 한다.
@@ -199,6 +203,8 @@ fun NavMap(
 
         var windowTrack: RouteTrack? = null
         var window = RouteWindow(0.0, 1.0)
+        // MapView 레이아웃 크기가 측정된 뒤 한 번 고정한 상단 패딩(px)을 계속 재사용해 시야 흔들림을 막는다.
+        var fixedTopPaddingPx = 0.0
 
         fun updateRoute(progressM: Double) {
             val track = latestNav.track ?: return
@@ -221,12 +227,15 @@ fun NavMap(
         }
 
         fun apply(pose: CameraPose) {
+            if (fixedTopPaddingPx <= 0.0 && mapView.height > 0) {
+                fixedTopPaddingPx = mapView.height * CAMERA_TOP_PADDING_FRACTION
+            }
             val position = CameraPosition.Builder()
                 .target(LatLng(pose.position.lat, pose.position.lng))
-                .zoom(pose.zoom)
+                .zoom(FIXED_CAMERA_ZOOM)
                 .tilt(CAMERA_TILT)
                 .bearing(pose.bearing)
-                .padding(0.0, mapView.height * CAMERA_TOP_PADDING_FRACTION, 0.0, 0.0)
+                .padding(0.0, fixedTopPaddingPx, 0.0, 0.0)
                 .build()
             m.moveCamera(CameraUpdateFactory.newCameraPosition(position))
             updateRoute(pose.progressM)
@@ -236,13 +245,13 @@ fun NavMap(
         apply(current)
         snapshotFlow { poseOf(latestNav) }.collectLatest { target ->
             if (target == current) return@collectLatest
-            if (target.track !== current.track) {
-                // 새 경로로 바뀌면 옛 경로 위치에서 보간하지 않고 바로 맞춘다. 보간하면 프레임마다 선을 다시 올리게 된다.
+            // 새 경로로 바뀌었거나 시뮬레이션 재시작으로 진행 거리가 뒤로 돌아간 경우 보간하지 않고 즉시 맞춘다.
+            if (target.track !== current.track || target.progressM < current.progressM - 10.0) {
                 current = target
                 apply(current)
                 return@collectLatest
             }
-            val (fromPosition, fromBearing, fromZoom, _, fromProgress) = current
+            val (fromPosition, fromBearing, _, fromProgress) = current
             val startNanos = withFrameNanos { it }
             var t = 0.0
             while (t < 1.0) {
@@ -253,7 +262,6 @@ fun NavMap(
                 current = CameraPose(
                     GeoMath.lerp(fromPosition, target.position, t),
                     GeoMath.lerpBearingDeg(fromBearing, target.bearing, t),
-                    fromZoom + (target.zoom - fromZoom) * t,
                     target.track,
                     fromProgress + (target.progressM - fromProgress) * t
                 )

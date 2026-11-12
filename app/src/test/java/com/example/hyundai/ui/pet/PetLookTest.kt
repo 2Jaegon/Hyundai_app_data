@@ -41,7 +41,7 @@ class PetLookTest {
     }
 
     @Test
-    fun `camera zoom is fixed at 18_2 regardless of intersection or building height`() {
-        assertEquals(18.2, FIXED_CAMERA_ZOOM, 1e-6)
+    fun `camera zoom is fixed at 17_8 regardless of intersection or building height`() {
+        assertEquals(17.8, FIXED_CAMERA_ZOOM, 1e-6)
     }
 }

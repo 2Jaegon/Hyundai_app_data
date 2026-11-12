@@ -183,6 +183,7 @@ fun TodakGilDashboard(
                 onToggleHeadlamp = viewModel::toggleHeadlampSimulation,
                 onStopAtLight = viewModel::simulateStopAtLight,
                 onVoiceApprove = viewModel::approveIncomingNoteByVoice,
+                onRestartSimulation = viewModel::restartSimulation,
                 modifier = Modifier.align(Alignment.BottomCenter)
             )
 

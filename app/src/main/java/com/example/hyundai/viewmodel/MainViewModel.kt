@@ -712,6 +712,41 @@ class MainViewModel(application: Application) :
     }
 
     /**
+     * 시연용: 시뮬레이션을 출발 지점(0m)과 초기 상태로 되돌린다.
+     * 사용자 설정(자동 TTS 재생, 출퇴근 밴드 필터, 지도 테마)은 그대로 유지한다.
+     */
+    fun restartSimulation() {
+        stopTtsPlayback()
+        recordingJob?.cancel()
+        sdkManager.stopVoiceNoteCapture()
+        signalHoldJob?.cancel()
+        releaseJob?.cancel()
+
+        progressM = 0.0
+        realLocationSeen = false
+        liveTurn = null
+        liveTurnDistM = 0.0
+        liveTurnAtMs = 0L
+
+        val initialNotes = initialVoiceNotes()
+        _uiState.update { current ->
+            AppUiState(
+                sdkStatus = current.sdkStatus,
+                mapTheme = current.mapTheme,
+                autoPlayTts = current.autoPlayTts,
+                showOnlyCommuteBand = current.showOnlyCommuteBand,
+                notes = initialNotes,
+                activeIncomingNote = NoteInbox.nextIncoming(
+                    initialNotes,
+                    commuteOnly = current.showOnlyCommuteBand
+                ),
+                toastBanner = "시뮬레이션을 출발 지점부터 다시 시작합니다."
+            )
+        }
+        publishNav()
+    }
+
+    /**
      * 5. 기어 전환 (P 전환 시 리포트 모달을 강제로 띄우지 않고, 오늘의 주행 기록과 바퀴자취만 자동 저장해 두며
      *    운전자가 정차 화면 상단의 리포트 버튼을 눌렀을 때만 열리도록 한다.)
      */
