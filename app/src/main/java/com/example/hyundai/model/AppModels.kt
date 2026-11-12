@@ -1,10 +1,10 @@
 package com.example.hyundai.model
 
-enum class GearState(val label: String, val description: String) {
-    P("P", "주차 (리포트·자취 지도 열람 가능)"),
-    R("R", "후진"),
-    N("N", "중립"),
-    D("D", "주행 (음성 전용 안전 모드)")
+enum class GearState(val label: String) {
+    P("P"),
+    R("R"),
+    N("N"),
+    D("D")
 }
 
 enum class TurnSignalState(val label: String) {
@@ -25,16 +25,7 @@ data class SdkConnectionStatus(
     val sttDetail: String = "초기화 대기",
     val naviConnected: Boolean = false,
     val naviDetail: String = "초기화 대기"
-) {
-    val activeCount: Int
-        get() = listOf(
-            vehicleConnected,
-            locationConnected,
-            ttsConnected,
-            sttConnected,
-            naviConnected
-        ).count { it }
-}
+)
 
 data class VehicleTelemetry(
     val speedKmh: Float = 62f,
@@ -106,15 +97,13 @@ data class PetCharacter(
 enum class NoteCategory(
     val label: String,
     val lifespanLabel: String,
-    val lifespanHours: Int,
-    val badgeColorHex: Long,
-    val iconEmoji: String
+    val badgeColorHex: Long
 ) {
     // 색은 포인트(액티브 블루)와 샌드 두 가지만 쓴다. 중요한 안전 쪽지만 포인트로 눈에 띄게 한다.
-    SAFETY_3H("상황·안전", "3시간 유지", 3, 0xFF00AAD2, "🚨"),
-    CHEER_24H("따뜻한 응원", "24시간 유지", 24, 0xFFE4DCD3, "💛"),
-    VIBE_7D("감성·풍경", "7일 유지", 168, 0xFFE4DCD3, "🌅"),
-    TIP_30D("길·맛집 꿀팁", "30일 유지", 720, 0xFFE4DCD3, "🍯")
+    SAFETY_3H("상황·안전", "3시간 유지", 0xFF00AAD2),
+    CHEER_24H("따뜻한 응원", "24시간 유지", 0xFFE4DCD3),
+    VIBE_7D("감성·풍경", "7일 유지", 0xFFE4DCD3),
+    TIP_30D("길·맛집 꿀팁", "30일 유지", 0xFFE4DCD3)
 }
 
 enum class ModerationStatus(val label: String) {

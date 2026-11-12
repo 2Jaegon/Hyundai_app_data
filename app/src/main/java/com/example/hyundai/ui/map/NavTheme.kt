@@ -29,5 +29,5 @@ object NavTheme {
     fun carRing(isDay: Boolean) = if (isDay) CAR_RING_DAY else CAR_RING
 
     /** 펫 강조색 (안내 카드의 테두리, 목도리, 알림 점). 경로선과 같은 하늘색으로 맞춘다. */
-    fun petAccent(@Suppress("UNUSED_PARAMETER") petId: String): Color = Color(0xFF38BDF8)
+    val PetAccent = Color(0xFF38BDF8)
 }

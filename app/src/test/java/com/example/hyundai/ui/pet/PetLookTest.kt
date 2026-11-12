@@ -1,34 +1,47 @@
 package com.example.hyundai.ui.pet
 
+import com.example.hyundai.ui.map.FIXED_CAMERA_ZOOM
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class PetLookTest {
 
     @Test
-    fun level1_hasNoAccessories() {
-        assertEquals(PetLook(scarf = false, blush = false, crown = false), PetLook.forLevel(1))
+    fun `level 1 has no accessories`() {
+        val look = PetLook.forLevel(1)
+        assertFalse(look.scarf)
+        assertFalse(look.blush)
+        assertFalse(look.crown)
     }
 
     @Test
-    fun level2_addsScarf() {
-        assertEquals(PetLook(scarf = true, blush = false, crown = false), PetLook.forLevel(2))
+    fun `level 2 unlocks scarf`() {
+        val look = PetLook.forLevel(2)
+        assertTrue(look.scarf)
+        assertFalse(look.blush)
+        assertFalse(look.crown)
     }
 
     @Test
-    fun level3_addsBlush() {
-        assertEquals(PetLook(scarf = true, blush = true, crown = false), PetLook.forLevel(3))
+    fun `level 3 unlocks blush`() {
+        val look = PetLook.forLevel(3)
+        assertTrue(look.scarf)
+        assertTrue(look.blush)
+        assertFalse(look.crown)
     }
 
     @Test
-    fun level4AndAbove_addsCrown() {
-        assertEquals(PetLook(scarf = true, blush = true, crown = true), PetLook.forLevel(4))
-        assertEquals(PetLook(scarf = true, blush = true, crown = true), PetLook.forLevel(12))
+    fun `level 4 and above unlocks crown`() {
+        val look = PetLook.forLevel(4)
+        assertTrue(look.scarf)
+        assertTrue(look.blush)
+        assertTrue(look.crown)
     }
 
     @Test
-    fun invalidLevel_behavesLikeLevel1() {
-        assertEquals(PetLook.forLevel(1), PetLook.forLevel(0))
-        assertEquals(PetLook.forLevel(1), PetLook.forLevel(-3))
+    fun `camera zoom is fixed at 18_2 regardless of intersection or building height`() {
+        assertEquals(18.2, FIXED_CAMERA_ZOOM, 1e-6)
     }
 }

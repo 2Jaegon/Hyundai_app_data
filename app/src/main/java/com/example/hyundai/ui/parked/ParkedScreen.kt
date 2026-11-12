@@ -32,7 +32,7 @@ import androidx.compose.ui.unit.sp
 import com.example.hyundai.domain.NoteInbox
 import com.example.hyundai.model.MannerTurnPhase
 import com.example.hyundai.model.VoiceNote
-import com.example.hyundai.ui.pet.ZeroPet
+import com.example.hyundai.ui.pet.PetModel
 import com.example.hyundai.ui.theme.TodakColors
 import com.example.hyundai.viewmodel.AppUiState
 import java.util.Locale
@@ -121,23 +121,7 @@ private fun ParkedHeader(
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Box(
-                modifier = Modifier
-                    .size(48.dp)
-                    .clip(RoundedCornerShape(14.dp))
-                    .background(TodakColors.RouteDeep),
-                contentAlignment = Alignment.Center
-            ) {
-                ZeroPet(
-                    level = 1,
-                    accent = Color(state.activePet.badgeColorHex),
-                    modifier = Modifier.size(42.dp),
-                    animate = false
-                )
-            }
-            Text("온길", color = Color.White, fontSize = 26.sp, fontWeight = FontWeight.ExtraBold)
-        }
+        Text("온길", color = Color.White, fontSize = 26.sp, fontWeight = FontWeight.ExtraBold)
 
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
             Chip(text = "작성권 ${state.remainingNoteTickets}장", color = TodakColors.Route, onClick = null)
@@ -189,12 +173,12 @@ private fun PetPane(modifier: Modifier, state: AppUiState) {
                         Brush.radialGradient(listOf(accent.copy(alpha = 0.28f), TodakColors.PanelDeep))
                     )
             ) {
-                ZeroPet(
-                    level = pet.level,
+                PetModel(
                     accent = accent,
                     modifier = Modifier
                         .fillMaxSize()
                         .padding(6.dp),
+                    level = pet.level,
                     holdingNote = state.heldNote != null,
                     excited = state.isTtsSpeaking
                 )

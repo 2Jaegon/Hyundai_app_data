@@ -7,8 +7,10 @@ data class NavUiState(
     val isFallbackRoute: Boolean = false,
     val carPosition: GeoPoint = RouteRepository.DEFAULT_ORIGIN,
     val carBearing: Float = 85f,
-    /** 지나온 부분을 뺀, 앞으로 갈 경로. 지도에는 이것만 그린다. */
-    val upcomingRoute: List<GeoPoint> = emptyList(),
+    /** 현재 경로 전체. 지도는 차가 지나간 부분을 [progressM] 위치까지 잘라 내고 그린다. */
+    val track: RouteTrack? = null,
+    /** 경로 시작점에서 차까지 온 거리(m). */
+    val progressM: Double = 0.0,
     val nextTurn: TurnIcon = TurnIcon.STRAIGHT,
     val distToTurnM: Double = 0.0,
     val remainingM: Double = 0.0,

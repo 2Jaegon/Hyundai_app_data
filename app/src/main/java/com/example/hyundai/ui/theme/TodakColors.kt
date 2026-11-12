@@ -36,13 +36,11 @@ object TodakColors {
     val RouteDeep = Color(0xFF007EA3)
 
     // ── 글자 ──
-    val TextPrimary = Color.White
     val TextSecondary = Sand
     val TextDim = Color(0xFFA9B6C8)
 
     // 예전 이름은 세 가지 색 안으로 모은다. 새 색을 만들지 않는다.
     val Good = Route
     val Warm = Sand
-    val Heart = RouteDeep
     val Danger = Sand
 }

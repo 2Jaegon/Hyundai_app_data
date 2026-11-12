@@ -66,11 +66,11 @@
       "minzoom": 14,
       "filter": ["!", ["has", "hide_3d"]],
       "paint": {
-        "fill-extrusion-base": ["coalesce", ["get", "render_min_height"], 0],
-        "fill-extrusion-height": ["coalesce", ["get", "render_height"], 6],
-        "fill-extrusion-color": ["interpolate", ["linear"], ["coalesce", ["get", "render_height"], 6],
-          0, "#CBD5E0", 30, "#C0CCD9", 80, "#B3C1D1", 180, "#A4B4C7"],
-        "fill-extrusion-opacity": 0.92,
+        "fill-extrusion-base": ["min", ["coalesce", ["get", "render_min_height"], 0], 12],
+        "fill-extrusion-height": ["min", ["coalesce", ["get", "render_height"], 10], 18],
+        "fill-extrusion-color": ["interpolate", ["linear"], ["min", ["coalesce", ["get", "render_height"], 10], 18],
+          0, "#CBD5E0", 10, "#C0CCD9", 18, "#B3C1D1"],
+        "fill-extrusion-opacity": 0.85,
         "fill-extrusion-vertical-gradient": true
       } }
   ]

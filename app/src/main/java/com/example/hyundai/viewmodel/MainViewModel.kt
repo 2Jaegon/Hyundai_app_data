@@ -40,7 +40,6 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import kotlin.math.abs
 
 data class AppUiState(
     val sdkStatus: SdkConnectionStatus = SdkConnectionStatus(),
@@ -72,7 +71,6 @@ data class AppUiState(
     val showVoiceComposeDialog: Boolean = false,
     val showParkingReportModal: Boolean = false,
     val showRewardShopModal: Boolean = false,
-    val showSdkArchitectureModal: Boolean = false,
     val parkingReport: ParkingReportSummary = ParkingReportSummary(),
     val tireTracks: List<TireTrackNode> = initialTireTracks(),
     val rewardItems: List<RewardShopItem> = initialRewardItems(),
@@ -229,8 +227,8 @@ class MainViewModel(application: Application) :
             isFallbackRoute = routeIsFallback,
             carPosition = pos,
             carBearing = bearing,
-            // 지나온 구간과 먼 구간은 잘라서, 지도가 매초 다시 그릴 점을 훨씬 적게 한다.
-            upcomingRoute = data.track.window(progressM, progressM + ROUTE_WINDOW_M),
+            track = data.track,
+            progressM = progressM,
             nextTurn = shownTurn,
             distToTurnM = shownDist,
             remainingM = snap.remainingM,
@@ -894,10 +892,6 @@ class MainViewModel(application: Application) :
         _uiState.update { it.copy(showRewardShopModal = visible) }
     }
 
-    fun setSdkArchitectureModalVisible(visible: Boolean) {
-        _uiState.update { it.copy(showSdkArchitectureModal = visible) }
-    }
-
     fun redeemRewardItem(item: RewardShopItem) {
         val state = _uiState.value
         if (state.warmthPoints < item.pointCost) {
@@ -934,9 +928,6 @@ private const val NEW_DESTINATION_MIN_M = 100.0
 
 /** 실제 위치가 경로에서 이 거리보다 멀면 경로 위의 차량 위치로 쓰지 않는다. */
 private const val REAL_LOCATION_MAX_OFF_ROUTE_M = 2_000.0
-
-/** 지도에 그리는 경로는 차 앞 이 거리까지만 남긴다. */
-private const val ROUTE_WINDOW_M = 4_000.0
 
 /** 온길의 첫 동행 펫 제로. 다른 펫은 이후 확장한다. */
 private fun initialPet(): PetCharacter = PetCharacter(

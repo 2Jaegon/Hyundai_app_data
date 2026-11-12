@@ -155,14 +155,4 @@ class RouteTrack(val points: List<GeoPoint>) {
         out.add(pointAt(to))
         return out
     }
-
-    /** [distM] 이후 남은 경로 좌표 (첫 점은 [distM] 위치). */
-    fun remainingPoints(distM: Double): List<GeoPoint> {
-        val d = distM.coerceIn(0.0, totalM)
-        val i = segmentIndex(d)
-        val rest = ArrayList<GeoPoint>(points.size - i)
-        rest.add(pointAt(d))
-        for (k in i + 1 until points.size) rest.add(points[k])
-        return rest
-    }
 }

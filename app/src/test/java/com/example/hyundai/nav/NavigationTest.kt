@@ -99,14 +99,6 @@ class RouteTrackTest {
         assertEquals(0.0, w.first().lng, 1e-9)
         assertEquals(0.02, w.last().lng, 1e-9)
     }
-
-    @Test
-    fun `slice returns the remaining part of the route`() {
-        val rest = east.remainingPoints(east.totalM / 2)
-        assertEquals(0.01, rest.first().lng, 1e-4)
-        assertEquals(0.02, rest.last().lng, 1e-9)
-        assertTrue(rest.size >= 2)
-    }
 }
 
 class NavSnapshotTest {

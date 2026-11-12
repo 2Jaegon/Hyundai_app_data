@@ -35,7 +35,7 @@ import androidx.compose.ui.unit.sp
 import com.example.hyundai.domain.NoteInbox
 import com.example.hyundai.model.VoiceNote
 import com.example.hyundai.ui.common.ScreenFrame
-import com.example.hyundai.ui.pet.ZeroPet
+import com.example.hyundai.ui.pet.PetModel
 import com.example.hyundai.ui.theme.TodakColors
 import com.example.hyundai.viewmodel.AppUiState
 
@@ -133,12 +133,12 @@ private fun PetCorner(state: AppUiState, modifier: Modifier = Modifier) {
                     Brush.radialGradient(listOf(TodakColors.Route.copy(alpha = 0.28f), TodakColors.PanelDeep))
                 )
         ) {
-            ZeroPet(
-                level = pet.level,
+            PetModel(
                 accent = TodakColors.Route,
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(6.dp),
+                level = pet.level,
                 holdingNote = state.heldNote != null,
                 excited = state.isTtsSpeaking
             )

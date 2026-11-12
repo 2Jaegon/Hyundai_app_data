@@ -12,20 +12,22 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.withFrameNanos
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import androidx.core.graphics.toColorInt
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.graphics.toColorInt
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.example.hyundai.nav.GeoMath
 import com.example.hyundai.nav.GeoPoint
 import com.example.hyundai.nav.NavUiState
+import com.example.hyundai.nav.RouteTrack
+import com.example.hyundai.nav.RouteWindow
 import kotlinx.coroutines.flow.collectLatest
 import org.json.JSONObject
 import org.maplibre.android.MapLibre
@@ -39,11 +41,12 @@ import org.maplibre.android.style.expressions.Expression
 import org.maplibre.android.style.layers.LineLayer
 import org.maplibre.android.style.layers.PropertyFactory.lineBlur
 import org.maplibre.android.style.layers.PropertyFactory.lineCap
-import org.maplibre.android.style.layers.PropertyFactory.lineColor
+import org.maplibre.android.style.layers.PropertyFactory.lineGradient
 import org.maplibre.android.style.layers.PropertyFactory.lineJoin
 import org.maplibre.android.style.layers.PropertyFactory.lineOpacity
 import org.maplibre.android.style.layers.PropertyFactory.lineWidth
 import org.maplibre.android.style.layers.Property
+import org.maplibre.android.style.sources.GeoJsonOptions
 import org.maplibre.android.style.sources.GeoJsonSource
 import org.maplibre.geojson.Feature
 import org.maplibre.geojson.FeatureCollection
@@ -51,9 +54,15 @@ import org.maplibre.geojson.LineString
 import org.maplibre.geojson.Point
 
 private const val ROUTE_SRC = "todak-route-src"
+private const val GLOW_LAYER = "todak-route-glow"
+private const val LINE_LAYER = "todak-route-line"
+private const val CORE_LAYER = "todak-route-core"
 
 /** 기울기를 낮추고 더 가깝게 봐서, 차 앞 가까운 길만 크게 보이게 한다. */
 private const val CAMERA_TILT = 45.0
+
+/** 건물 높이나 교차로 거리에 상관없이 시야 높이를 일정하게 유지하는 고정 줌 레벨. */
+internal const val FIXED_CAMERA_ZOOM = 18.2
 
 /** 위치가 1초마다 갱신되므로, 카메라도 1초에 걸쳐 일정한 속도로 이어서 움직인다. */
 private const val CAMERA_TWEEN_MS = 1000.0
@@ -61,19 +70,18 @@ private const val CAMERA_TWEEN_MS = 1000.0
 /** 차가 화면 아래쪽에 오도록 위쪽 여백을 준다. */
 private const val CAMERA_TOP_PADDING_FRACTION = 0.46
 
-/**
- * 카카오맵처럼 도로가 크게 보이는 가까운 시점. 교차로가 가까워지면 더 확대해 어느 길로 들어가는지 보여 준다.
- */
-private fun zoomFor(nav: NavUiState): Double = when {
-    nav.distToTurnM < 200 -> 19.0
-    nav.distToTurnM < 600 -> 18.6
-    else -> 18.2
-}
-
-private data class CameraPose(val position: GeoPoint, val bearing: Double, val zoom: Double)
+private data class CameraPose(
+    val position: GeoPoint,
+    val bearing: Double,
+    val zoom: Double,
+    /** 경로가 바뀌었는지 알아보는 용도(참조 비교). 바뀌면 보간하지 않고 바로 맞춘다. */
+    val track: RouteTrack?,
+    /** 경로선을 어디까지 지울지. 카메라와 같은 속도로 이어서 움직인다. */
+    val progressM: Double
+)
 
 private fun poseOf(nav: NavUiState) =
-    CameraPose(nav.carPosition, nav.carBearing.toDouble(), zoomFor(nav))
+    CameraPose(nav.carPosition, nav.carBearing.toDouble(), FIXED_CAMERA_ZOOM, nav.track, nav.progressM)
 
 /** 줌에 따라 같은 비율로 두께가 커지는 선 두께 (도로 폭과 맞춘다). */
 private fun zoomWidth(at17: Float, at19: Float): Expression =
@@ -82,6 +90,14 @@ private fun zoomWidth(at17: Float, at19: Float): Expression =
         Expression.stop(14, at17 * 0.22f),
         Expression.stop(17, at17),
         Expression.stop(19, at19)
+    )
+
+/** 선의 앞쪽 [fraction]까지는 투명, 그 뒤는 [color]로 칠한다. 지나간 길만 선이 사라지게 하는 방법이다. */
+private fun trimGradient(fraction: Float, color: String): Expression =
+    Expression.step(
+        Expression.lineProgress(),
+        Expression.rgba(0, 0, 0, 0),
+        Expression.stop(fraction, Expression.color(color.toColorInt()))
     )
 
 /**
@@ -145,17 +161,6 @@ fun NavMap(
             }
             map = m
         }
-        // TEMP-PERF: 프레임 수 측정. 검증이 끝나면 지운다.
-        var frames = 0
-        var windowStart = android.os.SystemClock.elapsedRealtime()
-        mapView.addOnDidFinishRenderingFrameListener { _, _, _ ->
-            frames++
-            val now = android.os.SystemClock.elapsedRealtime()
-            if (now - windowStart >= 3000) {
-                android.util.Log.d("NavPerf", "fps=${frames * 1000 / (now - windowStart)}")
-                frames = 0; windowStart = now
-            }
-        }
         // 고도 타일 형식을 못 읽으면 플래그만 켜고, 실제 다시 불러오는 일은 아래 효과가 한다.
         mapView.addOnDidFailLoadingMapListener { message ->
             if (message.contains("elevation-tiles", ignoreCase = true)) reliefFailed = true
@@ -173,19 +178,34 @@ fun NavMap(
         }
     }
 
-    LaunchedEffect(nav.upcomingRoute, styleReady) {
-        if (!styleReady) return@LaunchedEffect
-        map?.style?.getSourceAs<GeoJsonSource>(ROUTE_SRC)?.setGeoJson(routeGeoJson(nav))
-    }
-
     // snapshotFlow가 최신 내비 상태를 볼 수 있게 함수 인자를 상태로 감싼다.
     val latestNav by rememberUpdatedState(nav)
 
-    // 카메라: 새 위치가 올 때마다 지금 위치에서 새 위치까지 1초 동안 같은 속도로 이어서 움직인다.
-    // 차는 카메라 가운데에 고정된 점으로 그리므로, 점과 카메라가 따로 움직여 흔들리는 일이 없다.
-    LaunchedEffect(map, styleReady) {
+    // 카메라와 경로선: 새 위치가 올 때마다 지금 위치에서 새 위치까지 1초 동안 같은 속도로 이어서 움직인다.
+    // 차는 카메라 가운데에 고정된 점으로 그리고, 경로선은 같은 속도로 차 위치까지만 지워서 끊김이 없다.
+    LaunchedEffect(map, styleReady, isDay) {
         val m = map ?: return@LaunchedEffect
         if (!styleReady) return@LaunchedEffect
+        val style = m.style ?: return@LaunchedEffect
+
+        var windowTrack: RouteTrack? = null
+        var window = RouteWindow(0.0, 1.0)
+
+        fun updateRoute(progressM: Double) {
+            val track = latestNav.track ?: return
+            if (track !== windowTrack || window.needsRebuild(progressM)) {
+                windowTrack = track
+                window = RouteWindow.at(progressM, track.totalM)
+                // 구간은 몇 백 m마다 한 번만 올린다. 매초 올리면 지도가 그때마다 선을 다시 만들어 조각이 사라진다.
+                style.getSourceAs<GeoJsonSource>(ROUTE_SRC)
+                    ?.setGeoJson(routeGeoJson(track.window(window.startM, window.endM)))
+            }
+            val fraction = window.fraction(progressM)
+            val route = lineGradient(trimGradient(fraction, NavTheme.route(isDay)))
+            style.getLayerAs<LineLayer>(GLOW_LAYER)?.setProperties(route)
+            style.getLayerAs<LineLayer>(LINE_LAYER)?.setProperties(route)
+            style.getLayerAs<LineLayer>(CORE_LAYER)?.setProperties(lineGradient(trimGradient(fraction, NavTheme.routeCore(isDay))))
+        }
 
         fun apply(pose: CameraPose) {
             val position = CameraPosition.Builder()
@@ -196,13 +216,20 @@ fun NavMap(
                 .padding(0.0, mapView.height * CAMERA_TOP_PADDING_FRACTION, 0.0, 0.0)
                 .build()
             m.moveCamera(CameraUpdateFactory.newCameraPosition(position))
+            updateRoute(pose.progressM)
         }
 
         var current = poseOf(latestNav)
         apply(current)
         snapshotFlow { poseOf(latestNav) }.collectLatest { target ->
             if (target == current) return@collectLatest
-            val from = current
+            if (target.track !== current.track) {
+                // 새 경로로 바뀌면 옛 경로 위치에서 보간하지 않고 바로 맞춘다. 보간하면 프레임마다 선을 다시 올리게 된다.
+                current = target
+                apply(current)
+                return@collectLatest
+            }
+            val (fromPosition, fromBearing, fromZoom, _, fromProgress) = current
             val startNanos = withFrameNanos { it }
             var t = 0.0
             while (t < 1.0) {
@@ -211,9 +238,11 @@ fun NavMap(
                 }
                 // 중간에 새 위치가 와서 취소돼도 current가 마지막 보간 위치를 가지고 있어 끊김 없이 이어진다.
                 current = CameraPose(
-                    GeoMath.lerp(from.position, target.position, t),
-                    GeoMath.lerpBearingDeg(from.bearing, target.bearing, t),
-                    from.zoom + (target.zoom - from.zoom) * t
+                    GeoMath.lerp(fromPosition, target.position, t),
+                    GeoMath.lerpBearingDeg(fromBearing, target.bearing, t),
+                    fromZoom + (target.zoom - fromZoom) * t,
+                    target.track,
+                    fromProgress + (target.progressM - fromProgress) * t
                 )
                 apply(current)
             }
@@ -242,31 +271,40 @@ private fun CarMarker(isDay: Boolean) {
     }
 }
 
-private fun routeGeoJson(nav: NavUiState): FeatureCollection {
-    val pts = nav.upcomingRoute
+private fun routeGeoJson(pts: List<GeoPoint>): FeatureCollection {
     if (pts.size < 2) return FeatureCollection.fromFeatures(emptyList<Feature>())
     val line = LineString.fromLngLats(pts.map { Point.fromLngLat(it.lng, it.lat) })
     return FeatureCollection.fromFeature(Feature.fromGeometry(line))
 }
 
 private fun installRouteLayers(style: Style, isDay: Boolean) {
-    style.addSource(GeoJsonSource(ROUTE_SRC, FeatureCollection.fromFeatures(emptyList<Feature>())))
+    // 선 그라데이션은 line metrics가 켜진 소스에서만 동작한다. 타일 경계에서 굵은 선이 잘리지 않게 여유(buffer)도 준다.
+    style.addSource(
+        GeoJsonSource(
+            ROUTE_SRC,
+            FeatureCollection.fromFeatures(emptyList<Feature>()),
+            GeoJsonOptions().withLineMetrics(true).withBuffer(256)
+        )
+    )
 
     style.addLayer(
-        LineLayer("todak-route-glow", ROUTE_SRC).withProperties(
-            lineColor(NavTheme.route(isDay)), lineOpacity(0.30f), lineWidth(zoomWidth(34f, 72f)), lineBlur(10f),
+        LineLayer(GLOW_LAYER, ROUTE_SRC).withProperties(
+            lineGradient(trimGradient(0f, NavTheme.route(isDay))),
+            lineOpacity(0.30f), lineWidth(zoomWidth(34f, 72f)), lineBlur(10f),
             lineCap(Property.LINE_CAP_ROUND), lineJoin(Property.LINE_JOIN_ROUND)
         )
     )
     style.addLayer(
-        LineLayer("todak-route-line", ROUTE_SRC).withProperties(
-            lineColor(NavTheme.route(isDay)), lineWidth(zoomWidth(16f, 34f)),
+        LineLayer(LINE_LAYER, ROUTE_SRC).withProperties(
+            lineGradient(trimGradient(0f, NavTheme.route(isDay))),
+            lineWidth(zoomWidth(16f, 34f)),
             lineCap(Property.LINE_CAP_ROUND), lineJoin(Property.LINE_JOIN_ROUND)
         )
     )
     style.addLayer(
-        LineLayer("todak-route-core", ROUTE_SRC).withProperties(
-            lineColor(NavTheme.routeCore(isDay)), lineWidth(zoomWidth(5f, 11f)),
+        LineLayer(CORE_LAYER, ROUTE_SRC).withProperties(
+            lineGradient(trimGradient(0f, NavTheme.routeCore(isDay))),
+            lineWidth(zoomWidth(5f, 11f)),
             lineCap(Property.LINE_CAP_ROUND), lineJoin(Property.LINE_JOIN_ROUND)
         )
     )

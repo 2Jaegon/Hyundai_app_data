@@ -19,26 +19,8 @@ import com.example.hyundai.nav.TurnIcon
 import com.example.hyundai.ui.drive.DriveScreen
 import com.example.hyundai.ui.drive.TurnArrow
 import com.example.hyundai.ui.parked.ParkedScreen
-import com.example.hyundai.ui.pet.ZeroPet
 import com.example.hyundai.ui.theme.TodakColors
 import com.example.hyundai.viewmodel.AppUiState
-
-@Preview(widthDp = 960, heightDp = 240, backgroundColor = 0xFF001A3A, showBackground = true)
-@Composable
-fun PetsPreview() {
-    Row(
-        modifier = Modifier.padding(16.dp),
-        horizontalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
-        ZeroPet(level = 1, accent = TodakColors.Route, modifier = Modifier.size(200.dp), animate = false)
-        ZeroPet(level = 3, accent = TodakColors.Route, modifier = Modifier.size(200.dp), animate = false)
-        ZeroPet(level = 4, accent = TodakColors.Route, modifier = Modifier.size(200.dp), animate = false)
-        ZeroPet(
-            level = 2, accent = TodakColors.Route, modifier = Modifier.size(200.dp),
-            animate = false, holdingNote = true
-        )
-    }
-}
 
 @Preview(widthDp = 760, heightDp = 160, backgroundColor = 0xFF00234C, showBackground = true)
 @Composable

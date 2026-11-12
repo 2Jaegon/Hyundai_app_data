@@ -44,7 +44,7 @@ import com.example.hyundai.nav.NavUiState
 import com.example.hyundai.nav.TurnIcon
 import com.example.hyundai.ui.map.NavMap
 import com.example.hyundai.ui.map.NavTheme
-import com.example.hyundai.ui.pet.ZeroPet
+import com.example.hyundai.ui.pet.PetModel
 import com.example.hyundai.viewmodel.AppUiState
 import kotlinx.coroutines.delay
 
@@ -211,8 +211,7 @@ private fun PetBadge(
     animate: Boolean,
     modifier: Modifier = Modifier
 ) {
-    val pet = state.activePet
-    val accent = NavTheme.petAccent(pet.id)
+    val accent = NavTheme.PetAccent
     var excited by remember { mutableStateOf(false) }
     val hasIncoming = state.activeIncomingNote != null || state.isTtsSpeaking
 
@@ -237,15 +236,15 @@ private fun PetBadge(
                 .background(Panel)
                 .border(1.dp, accent.copy(alpha = 0.55f), RoundedCornerShape(26.dp))
         )
-        ZeroPet(
-            level = pet.level,
+        PetModel(
             accent = accent,
             modifier = Modifier
                 .fillMaxSize()
                 .padding(6.dp),
+            level = state.activePet.level,
             // 주행 중 펫을 계속 움직이면 화면 전체가 매 프레임 다시 합성되어 지도가 끈긴다(측정: 8fps→25fps).
-            // 그래서 쉼 때는 가만히 두고, 쪽지를 읽을 때만 움직인다.
-            animate = animate && (excited || state.isTtsSpeaking || state.heldNote != null),
+            // 그래서 쉼 때는 한 번만 그리고, 쪽지를 읽을 때만 움직인다.
+            spin = animate && (excited || state.isTtsSpeaking || state.heldNote != null),
             excited = excited || state.isTtsSpeaking,
             holdingNote = state.heldNote != null
         )
