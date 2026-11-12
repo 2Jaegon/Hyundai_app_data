@@ -12,9 +12,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -60,7 +58,8 @@ fun SimulatorDrawer(
     onRestartSimulation: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
-    var open by remember { mutableStateOf(false) }
+    // 테스트 및 시연 때 바로 조작할 수 있도록 기본으로 펼쳐 둔다.
+    var open by remember { mutableStateOf(true) }
 
     Column(
         modifier = modifier,
@@ -73,7 +72,7 @@ fun SimulatorDrawer(
         ) {
             Column(
                 modifier = Modifier
-                    .padding(bottom = 10.dp)
+                    .padding(bottom = 8.dp)
                     .clip(RoundedCornerShape(20.dp))
                     .background(TodakColors.Background.copy(alpha = 0.96f))
                     .border(1.dp, TodakColors.EdgeStrong, RoundedCornerShape(20.dp))
@@ -88,7 +87,7 @@ fun SimulatorDrawer(
                     SimButton("신호 대기", TodakColors.RouteDeep, onStopAtLight)
                     SimButton("음성 승인", TodakColors.Neutral, onVoiceApprove)
                     SimButton(
-                        if (state.telemetry.gear == GearState.P) "주행" else "주차",
+                        if (state.telemetry.gear == GearState.P) "주행 (D)" else "주차 (P)",
                         TodakColors.RouteDeep,
                         onToggleGearPark
                     )
@@ -117,19 +116,18 @@ fun SimulatorDrawer(
 
         Box(
             modifier = Modifier
-                .width(132.dp)
-                .height(22.dp)
-                .clip(RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp))
-                .background(TodakColors.Background.copy(alpha = 0.7f))
-                .clickable { open = !open },
+                .clip(RoundedCornerShape(topStart = 14.dp, topEnd = 14.dp))
+                .background(TodakColors.Background.copy(alpha = 0.92f))
+                .border(1.dp, TodakColors.Route.copy(alpha = 0.7f), RoundedCornerShape(topStart = 14.dp, topEnd = 14.dp))
+                .clickable { open = !open }
+                .padding(horizontal = 24.dp, vertical = 7.dp),
             contentAlignment = Alignment.Center
         ) {
-            Box(
-                modifier = Modifier
-                    .width(44.dp)
-                    .height(4.dp)
-                    .clip(RoundedCornerShape(2.dp))
-                    .background(TodakColors.TextDim)
+            Text(
+                text = if (open) "▼ 시뮬레이터 제어바 접기" else "▲ 시뮬레이터 제어바 열기",
+                color = TodakColors.Route,
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Bold
             )
         }
     }

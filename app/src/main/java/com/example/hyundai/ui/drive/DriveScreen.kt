@@ -1,8 +1,5 @@
 package com.example.hyundai.ui.drive
 
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -96,38 +93,57 @@ fun DriveScreen(
                 .padding(end = 24.dp, top = 22.dp)
         )
 
-        // 쪽지함과 설정은 차가 완전히 멈추었을 때(신호 대기 등)만 나타난다.
+        // 쪽지함과 설정은 주행 중에도 버튼을 보여 주되, 차가 멈추었을 때만 열리고 달리는 중에 누르면 안전 안내 토스트를 띄운다.
         val stopped = NoteAccess.canBrowse(state.telemetry.gear, state.telemetry.speedKmh)
-        AnimatedVisibility(
-            visible = stopped,
-            enter = fadeIn(),
-            exit = fadeOut(),
+        Column(
             modifier = Modifier
                 .align(Alignment.TopEnd)
-                .padding(end = 24.dp, top = 22.dp + 132.dp + 12.dp)
+                .padding(end = 24.dp, top = 22.dp + 132.dp + 12.dp),
+            horizontalAlignment = Alignment.End,
+            verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            Column(
-                horizontalAlignment = Alignment.End,
-                verticalArrangement = Arrangement.spacedBy(10.dp)
+            StoppedAction("쪽지함", enabled = stopped, onClick = onOpenInbox)
+            StoppedAction("설정", enabled = stopped, onClick = onOpenSettings)
+        }
+
+        // 현재 시뮬레이션/주행 이벤트 안내 배너를 상단 중앙에 표시해 테스트 상태를 한눈에 확인할 수 있게 한다.
+        if (state.toastBanner.isNotBlank()) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = 22.dp)
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(Panel)
+                    .border(1.dp, NavTheme.PetAccent.copy(alpha = 0.55f), RoundedCornerShape(16.dp))
+                    .padding(horizontal = 22.dp, vertical = 10.dp)
             ) {
-                StoppedAction("쪽지함", onOpenInbox)
-                StoppedAction("설정", onOpenSettings)
+                Text(
+                    text = state.toastBanner,
+                    color = Color.White,
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold
+                )
             }
         }
     }
 }
 
 @Composable
-private fun StoppedAction(text: String, onClick: () -> Unit) {
+private fun StoppedAction(text: String, enabled: Boolean = true, onClick: () -> Unit) {
     Box(
         modifier = Modifier
             .clip(RoundedCornerShape(16.dp))
-            .background(Panel)
-            .border(1.dp, PanelEdge, RoundedCornerShape(16.dp))
+            .background(if (enabled) Panel else Panel.copy(alpha = 0.65f))
+            .border(1.dp, if (enabled) NavTheme.PetAccent.copy(alpha = 0.7f) else PanelEdge, RoundedCornerShape(16.dp))
             .clickable(onClick = onClick)
             .padding(horizontal = 24.dp, vertical = 12.dp)
     ) {
-        Text(text, color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+        Text(
+            text = text,
+            color = if (enabled) Color.White else NavTheme.TextSecondary,
+            fontSize = 20.sp,
+            fontWeight = FontWeight.Bold
+        )
     }
 }
 
