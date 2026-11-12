@@ -11,6 +11,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -89,6 +91,55 @@ private fun BackChevron(modifier: Modifier = Modifier) {
             style = Stroke(width = size.width * 0.16f, cap = StrokeCap.Round, join = StrokeJoin.Round)
         )
     }
+}
+
+/** 버튼의 두 단계. 주 행동은 포인트 색, 나머지는 보조 색이다. */
+enum class ButtonTone { Primary, Secondary }
+
+/**
+ * 온길의 하나뿐인 버튼. 모양·높이·글자를 모든 화면에서 같게 쓴다.
+ * 차량 화면에서 누르기 쉽게 56dp 이상으로 만든다. 누를 수 없을 때는 색을 빼고 터치를 받지 않는다.
+ */
+@Composable
+fun TodakButton(
+    text: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    tone: ButtonTone = ButtonTone.Secondary,
+    enabled: Boolean = true
+) {
+    val background = when {
+        !enabled -> TodakColors.Edge
+        tone == ButtonTone.Primary -> TodakColors.RouteDeep
+        else -> TodakColors.Neutral
+    }
+    Box(
+        modifier = modifier
+            .heightIn(min = 56.dp)
+            .clip(RoundedCornerShape(14.dp))
+            .background(background)
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(horizontal = 22.dp, vertical = 12.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text,
+            color = if (enabled) Color.White else TodakColors.TextDim,
+            fontSize = 18.sp,
+            fontWeight = FontWeight.Bold
+        )
+    }
+}
+
+/** 패널 안에서 항목을 나누는 선. 상자 안에 상자를 또 넣지 않기 위해 쓴다. */
+@Composable
+fun PanelDivider(modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(1.dp)
+            .background(TodakColors.Edge)
+    )
 }
 
 /** 켜짐/꺼짐 스위치. 차량 화면에서 손가락으로 누르기 쉽게 크게 만든다. */

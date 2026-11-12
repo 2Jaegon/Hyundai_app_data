@@ -18,6 +18,8 @@ import com.example.hyundai.nav.NavUiState
 import com.example.hyundai.nav.TurnIcon
 import com.example.hyundai.ui.drive.DriveScreen
 import com.example.hyundai.ui.drive.TurnArrow
+import com.example.hyundai.ui.inbox.NoteInboxScreen
+import com.example.hyundai.ui.settings.SettingsScreen
 import com.example.hyundai.ui.parked.ParkedScreen
 import com.example.hyundai.ui.pet.PetModel
 import com.example.hyundai.ui.pet.PetPose
@@ -82,7 +84,7 @@ fun DriveScreenPreview() {
     )
 }
 
-@Preview(widthDp = 1280, heightDp = 560, showBackground = true)
+@Preview(widthDp = 1280, heightDp = 720, showBackground = true)
 @Composable
 fun ParkedScreenPreview() {
     val base = AppUiState()
@@ -104,4 +106,22 @@ fun ParkedScreenPreview() {
             onStopTts = {}
         )
     }
+}
+
+@Preview(widthDp = 1280, heightDp = 720, showBackground = true)
+@Composable
+fun NoteInboxScreenPreview() {
+    NoteInboxScreen(state = AppUiState(), onBack = {}, onListen = {}, onStop = {}, onLike = {})
+}
+
+@Preview(widthDp = 1280, heightDp = 720, showBackground = true)
+@Composable
+fun SettingsScreenPreview() {
+    SettingsScreen(
+        state = AppUiState(),
+        onBack = {},
+        onToggleAutoPlay = {},
+        onToggleCommuteOnly = {},
+        onSelectMapTheme = {}
+    )
 }
