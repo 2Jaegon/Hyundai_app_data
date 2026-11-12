@@ -68,7 +68,7 @@ fun DriveScreen(
         if (map != null) {
             map(Modifier.fillMaxSize())
         } else {
-            NavMap(nav = state.nav, isDay = isDay, modifier = Modifier.fillMaxSize())
+            NavMap(nav = state.nav, isDay = isDay, modifier = Modifier.fillMaxSize(), covered = !petAnimated)
         }
 
         TurnCard(
@@ -93,7 +93,7 @@ fun DriveScreen(
                 .padding(end = 24.dp, top = 22.dp)
         )
 
-        // 쪽지함과 설정은 주행 중에도 버튼을 보여 주되, 차가 멈추었을 때만 열리고 달리는 중에 누르면 안전 안내 토스트를 띄운다.
+        // 쪽지함과 설정은 주행 중에도 버튼을 보여 주되, 차가 멈추었을 때만 열리고 달리는 중에 누르면 글자 없이 음성으로만 안내한다.
         val stopped = NoteAccess.canBrowse(state.telemetry.gear, state.telemetry.speedKmh)
         Column(
             modifier = Modifier

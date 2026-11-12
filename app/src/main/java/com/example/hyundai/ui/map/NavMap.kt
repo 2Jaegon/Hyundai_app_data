@@ -71,7 +71,7 @@ private const val NOTE_ZONE_CORE_LAYER = "todak-note-zone-core"
 private const val CAMERA_TILT = 32.0
 
 /** 건물 높이나 교차로 거리에 상관없이 시야 높이를 항상 동일하게 유지하는 고정 줌 레벨. */
-internal const val FIXED_CAMERA_ZOOM = 17.8
+internal const val FIXED_CAMERA_ZOOM = 18.6
 
 /** 위치가 1초마다 갱신되므로, 카메라도 1초에 걸쳐 일정한 속도로 이어서 움직인다. */
 private const val CAMERA_TWEEN_MS = 1000.0
@@ -116,7 +116,9 @@ private fun trimGradient(fraction: Float, color: String): Expression =
 fun NavMap(
     nav: NavUiState,
     isDay: Boolean,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    /** 다른 화면이 지도를 덮고 있으면 true. 안 보이는 지도를 프레임마다 갱신하지 않는다. */
+    covered: Boolean = false
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -193,6 +195,7 @@ fun NavMap(
 
     // snapshotFlow가 최신 내비 상태를 볼 수 있게 함수 인자를 상태로 감싼다.
     val latestNav by rememberUpdatedState(nav)
+    val latestCovered by rememberUpdatedState(covered)
 
     // 카메라와 경로선: 새 위치가 올 때마다 지금 위치에서 새 위치까지 1초 동안 같은 속도로 이어서 움직인다.
     // 차는 카메라 가운데에 고정된 점으로 그리고, 경로선은 같은 속도로 차 위치까지만 지워서 끊김이 없다.
@@ -245,6 +248,12 @@ fun NavMap(
         apply(current)
         snapshotFlow { poseOf(latestNav) }.collectLatest { target ->
             if (target == current) return@collectLatest
+            if (latestCovered) {
+                // 가려진 동안에는 보간 없이 한 번만 맞춘다. 다시 보이면 이미 최신 위치다.
+                current = target
+                apply(current)
+                return@collectLatest
+            }
             // 새 경로로 바뀌었거나 시뮬레이션 재시작으로 진행 거리가 뒤로 돌아간 경우 보간하지 않고 즉시 맞춘다.
             if (target.track !== current.track || target.progressM < current.progressM - 10.0) {
                 current = target

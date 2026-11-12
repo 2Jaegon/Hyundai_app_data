@@ -179,6 +179,7 @@ private fun PetPane(modifier: Modifier, state: AppUiState) {
                         .fillMaxSize()
                         .padding(6.dp),
                     level = pet.level,
+                    spin = state.heldNote != null, // 계속 움직이면 매 프레임 다시 그려 버튼 반응이 느려진다
                     holdingNote = state.heldNote != null,
                     excited = state.isTtsSpeaking
                 )

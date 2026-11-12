@@ -139,6 +139,7 @@ private fun PetCorner(state: AppUiState, modifier: Modifier = Modifier) {
                     .fillMaxSize()
                     .padding(6.dp),
                 level = pet.level,
+                spin = state.heldNote != null,
                 holdingNote = state.heldNote != null,
                 excited = state.isTtsSpeaking
             )

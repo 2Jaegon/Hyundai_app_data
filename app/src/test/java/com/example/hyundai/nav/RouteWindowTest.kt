@@ -134,5 +134,7 @@ class RouteWindowTest {
         assertEquals(1, zones.size)
         assertEquals("n1", zones[0].noteId)
         assertTrue(zones[0].endM > zones[0].startM)
+        // 쪽지 한 개가 차지하는 구간은 최대 60m. 더 넓으면 지도에서 너무 길게 강조된다.
+        assertTrue(zones[0].endM - zones[0].startM <= 60.0 + 1e-6)
     }
 }

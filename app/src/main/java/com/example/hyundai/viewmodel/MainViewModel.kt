@@ -861,7 +861,8 @@ class MainViewModel(application: Application) :
     fun openScreen(screen: AppScreen) {
         val t = _uiState.value.telemetry
         if (!NoteAccess.canBrowse(t.gear, t.speedKmh)) {
-            _uiState.update { it.copy(toastBanner = "달리는 중에는 열 수 없어요.") }
+            // 달리는 중에는 화면 글자를 띄우지 않고 음성으로만 알린다. 쪽지를 읽는 중이면 끊지 않는다.
+            if (!_uiState.value.isTtsSpeaking) sdkManager.speakAnonymousNote(DRIVING_LOCK_VOICE)
             return
         }
         _uiState.update { it.copy(screen = screen) }
@@ -1198,8 +1199,11 @@ private const val NEW_DESTINATION_MIN_M = 100.0
 /** 실제 위치가 경로에서 이 거리보다 멀면 경로 위의 차량 위치로 쓰지 않는다. */
 private const val REAL_LOCATION_MAX_OFF_ROUTE_M = 2_000.0
 
-/** 쪽지 하나가 경로 위에서 다른 색상으로 강조 표시되는 구간의 기본 반경(앞뒤 각 90m = 총 180m 구간). */
-private const val NOTE_ZONE_HALF_LENGTH_M = 90.0
+/** 쪽지 하나가 경로 위에서 다른 색상으로 강조 표시되는 구간의 기본 반경(앞뒤 각 30m = 총 60m 구간). */
+private const val NOTE_ZONE_HALF_LENGTH_M = 30.0
+
+/** 달리는 중에 쪽지함·설정을 눌렀을 때 음성으로만 들려 주는 안내. */
+private const val DRIVING_LOCK_VOICE = "달리는 중에는 열 수 없어요. 정차한 뒤에 눌러 주세요."
 
 /**
  * 현재 경로([track]) 위에서 같은 방향(`isSameDirection`) 쪽지들이 놓인 구간([NoteRouteZone])을 계산한다.
