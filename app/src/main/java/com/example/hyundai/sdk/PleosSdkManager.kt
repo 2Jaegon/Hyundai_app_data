@@ -329,6 +329,15 @@ class PleosSdkManager(
 
     private fun initVehicleSdk() {
         try {
+            if (appContext.checkSelfPermission("pleos.car.permission.CAR_DRIVE") !=
+                android.content.pm.PackageManager.PERMISSION_GRANTED
+            ) {
+                status = status.copy(
+                    vehicleConnected = false,
+                    vehicleDetail = "Vehicle 2.3.2 미지원 환경 (시뮬레이터 주행 모드)"
+                )
+                return
+            }
             val v = Vehicle(appContext)
             v.initialize()
             vehicle = v
@@ -389,6 +398,7 @@ class PleosSdkManager(
             )
         } catch (e: Throwable) {
             Log.w(tag, "Vehicle SDK init failed: ${e.message}")
+            vehicle = null
             status = status.copy(
                 vehicleConnected = false,
                 vehicleDetail = "Vehicle 2.3.2 초기화 실패: ${e.message}"
@@ -413,7 +423,23 @@ class PleosSdkManager(
     private fun initFusedLocationSdk() {
         try {
             val fl = FusedLocation(appContext)
-            val supported = runCatching { fl.isSupported() }.getOrDefault(true)
+            val supported = runCatching { fl.isSupported() }.getOrDefault(false)
+            if (!supported) {
+                status = status.copy(
+                    locationConnected = false,
+                    locationDetail = "FusedLocation 1.1.3 미지원 단말 (데모 주행 모드)"
+                )
+                return
+            }
+            if (appContext.checkSelfPermission("pleos.car.permission.FUSED_LOCATION") !=
+                android.content.pm.PackageManager.PERMISSION_GRANTED
+            ) {
+                status = status.copy(
+                    locationConnected = false,
+                    locationDetail = "FusedLocation 1.1.3 권한 승인 대기 중"
+                )
+                return
+            }
             fl.initialize()
             fl.registerFusedLocationCallback(fusedLocationListener)
             fusedLocation = fl
@@ -493,13 +519,22 @@ class PleosSdkManager(
             }
         }
         try {
+            if (appContext.checkSelfPermission("pleos.car.permission.TTS_SERVICE") !=
+                android.content.pm.PackageManager.PERMISSION_GRANTED
+            ) {
+                status = status.copy(
+                    ttsConnected = false,
+                    ttsDetail = "TextToSpeech 3.3.1 미지원 환경 (안드로이드 시스템 TTS 사용)"
+                )
+                return
+            }
             val useServer = serverClientId.isNotBlank() && serverClientSecret.isNotBlank()
             val ttsMode = if (useServer) TtsMode.SERVER else TtsMode.ON_DEVICE
             val tts = TextToSpeech(appContext, ttsMode)
-            pleosTts = tts
             status = status.copy(ttsConnected = false, ttsDetail = "TextToSpeech 3.3.1 (${ttsMode.name} 연결 중…)")
             // initialize(리스너) 버전은 이 SDK에서 내부 lateinit 오류(실측)가 나서, 리스너 없는 initialize()를 쓴다.
             tts.initialize()
+            pleosTts = tts
             if (useServer) {
                 runCatching {
                     tts.registerApp(
@@ -519,6 +554,7 @@ class PleosSdkManager(
             attachTtsListener(tts, attempt = 0)
         } catch (e: Throwable) {
             Log.w(tag, "Pleos TTS init failed", e)
+            pleosTts = null
             status = status.copy(ttsConnected = false, ttsDetail = "TextToSpeech 3.3.1 초기화 실패: ${e.message}")
         }
     }
@@ -595,11 +631,20 @@ class PleosSdkManager(
 
     private fun initSttSdk() {
         try {
+            if (appContext.checkSelfPermission("pleos.car.permission.STT_SERVICE") !=
+                android.content.pm.PackageManager.PERMISSION_GRANTED
+            ) {
+                status = status.copy(
+                    sttConnected = false,
+                    sttDetail = "SpeechToText 3.3.1 미지원 환경 (시뮬레이터 음성 프리셋 사용)"
+                )
+                return
+            }
             val useServer = serverClientId.isNotBlank() && serverClientSecret.isNotBlank()
             val sttMode = if (useServer) SttMode.SERVER else SttMode.ON_DEVICE
             val stt = SpeechToText(appContext, sttMode)
-            stt.addListener(sttResultListener)
             stt.initialize()
+            stt.addListener(sttResultListener)
             if (useServer) {
                 runCatching {
                     stt.registerApp(
@@ -623,6 +668,7 @@ class PleosSdkManager(
             status = status.copy(sttConnected = false, sttDetail = "SpeechToText 3.3.1 (${sttMode.name} 연결 중…)")
         } catch (e: Throwable) {
             Log.w(tag, "Pleos STT init failed: ${e.message}")
+            pleosStt = null
             status = status.copy(sttConnected = false, sttDetail = "SpeechToText 3.3.1 초기화 실패: ${e.message}")
         }
     }
@@ -660,6 +706,15 @@ class PleosSdkManager(
 
     private fun initNaviHelperSdk() {
         try {
+            if (appContext.checkSelfPermission("pleos.car.permission.NAVI_ROUTE") !=
+                android.content.pm.PackageManager.PERMISSION_GRANTED
+            ) {
+                status = status.copy(
+                    naviConnected = false,
+                    naviDetail = "NaviHelper 3.0.5 미지원 환경 (OSRM/데모 경로 모드)"
+                )
+                return
+            }
             val helper = NaviHelper(appContext)
             helper.initialize()
             helper.addListener(naviListener)
@@ -672,6 +727,7 @@ class PleosSdkManager(
             )
         } catch (e: Throwable) {
             Log.w(tag, "NaviHelper SDK init failed: ${e.message}")
+            naviHelper = null
             status = status.copy(
                 naviConnected = false,
                 naviDetail = "NaviHelper 3.0.5 초기화 실패: ${e.message}"
