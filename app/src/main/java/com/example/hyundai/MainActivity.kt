@@ -14,7 +14,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
@@ -22,7 +22,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.unit.Density
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.hyundai.domain.NoteAccess
 import com.example.hyundai.model.AppScreen
@@ -37,11 +36,11 @@ import com.example.hyundai.ui.drive.DriveScreen
 import com.example.hyundai.ui.inbox.NoteInboxScreen
 import com.example.hyundai.ui.parked.ParkedScreen
 import com.example.hyundai.ui.settings.SettingsScreen
+import com.example.hyundai.ui.theme.LocalDeviceDensity
+import com.example.hyundai.ui.theme.OnGilScale
 import com.example.hyundai.ui.theme.TodakColors
 import com.example.hyundai.viewmodel.AppUiState
 import com.example.hyundai.viewmodel.MainViewModel
-
-private const val CAR_FONT_SCALE = 1.2f
 
 class MainActivity : ComponentActivity() {
 
@@ -60,17 +59,22 @@ class MainActivity : ComponentActivity() {
         // 차량 화면은 주행 중 꺼지면 안 된다.
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         setContent {
-            // 차량 화면(2560px, 160dpi)에서는 일반 글자 크기가 작게 보여서 글자만 조금 키운다.
-            val base = LocalDensity.current
+            // 차량 화면(2560px, 160dpi)에서는 휴대폰 기준 크기가 작게 보여서 화면 전체를 한 번 키운다(OnGilScale).
+            val device = LocalDensity.current
             CompositionLocalProvider(
-                LocalDensity provides Density(base.density, base.fontScale * CAR_FONT_SCALE)
+                LocalDensity provides OnGilScale.car(device),
+                LocalDeviceDensity provides device
             ) {
                 MaterialTheme(
-                    colorScheme = darkColorScheme(
-                        primary = TodakColors.Route,
-                        secondary = TodakColors.Good,
+                    colorScheme = lightColorScheme(
+                        primary = TodakColors.RouteDeep,
+                        onPrimary = TodakColors.OnColor,
+                        secondary = TodakColors.Apricot,
                         background = TodakColors.Background,
-                        surface = TodakColors.Panel
+                        onBackground = TodakColors.Text,
+                        surface = TodakColors.Panel,
+                        onSurface = TodakColors.Text,
+                        outline = TodakColors.EdgeStrong
                     )
                 ) {
                     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -221,7 +225,10 @@ fun TodakGilDashboard(
             }
 
             // 시뮬레이터 제어바는 모달(리포트, 보상샵, 음성작성) 위에서도 항상 조작할 수 있도록 최상단에 그린다.
-            if (!state.hideSimulatorDrawer) {
+            // 시연용 도구라 화면을 덜 가리도록 배율을 적용하지 않은 기기 크기로 그린다.
+            if (!state.hideSimulatorDrawer) CompositionLocalProvider(
+                LocalDensity provides (LocalDeviceDensity.current ?: LocalDensity.current)
+            ) {
                 SimulatorDrawer(
                     state = state,
                     onSafeDriveStep = { viewModel.simulateSafeDrivingStep(0.5f) },

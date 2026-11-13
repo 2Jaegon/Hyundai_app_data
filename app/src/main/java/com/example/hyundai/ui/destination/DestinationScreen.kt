@@ -89,7 +89,7 @@ fun DestinationScreen(
                         value = query,
                         onValueChange = { query = it.take(60) },
                         singleLine = true,
-                        textStyle = TextStyle(color = Color.White, fontSize = 22.sp),
+                        textStyle = TextStyle(color = TodakColors.Text, fontSize = 22.sp),
                         cursorBrush = SolidColor(TodakColors.Route),
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                         keyboardActions = KeyboardActions(onSearch = { submit() }),
@@ -165,7 +165,7 @@ private fun PlaceRow(
                     Text(it, color = TodakColors.Route, fontSize = 16.sp, fontWeight = FontWeight.Bold)
                 }
                 Text(
-                    place.name, color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.ExtraBold,
+                    place.name, color = TodakColors.Text, fontSize = 22.sp, fontWeight = FontWeight.ExtraBold,
                     maxLines = 1, overflow = TextOverflow.Ellipsis
                 )
             }
@@ -202,7 +202,7 @@ private fun Shortcut(text: String, selected: Boolean, onClick: () -> Unit) {
             .padding(vertical = 14.dp),
         contentAlignment = Alignment.Center
     ) {
-        Text(text, color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+        Text(text, color = if (selected) TodakColors.OnColor else TodakColors.Text, fontSize = 20.sp, fontWeight = FontWeight.Bold)
     }
 }
 
@@ -216,7 +216,7 @@ private fun ActionButton(text: String, primary: Boolean = false, onClick: () -> 
             .padding(horizontal = 22.dp, vertical = 14.dp),
         contentAlignment = Alignment.Center
     ) {
-        Text(text, color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+        Text(text, color = if (primary) TodakColors.OnColor else TodakColors.RouteDeep, fontSize = 18.sp, fontWeight = FontWeight.Bold)
     }
 }
 

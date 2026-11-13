@@ -3,44 +3,56 @@ package com.example.hyundai.ui.theme
 import androidx.compose.ui.graphics.Color
 
 /**
- * 온길 색상. 현대차의 차분한 톤을 따라 색을 세 가지로만 쓴다.
+ * 온길 색상. 기본 색은 세 가지뿐이다.
  *
- *  - 메인 1 · 현대 블루(#002C5F)와 그 명도 변형: 배경, 패널, 지도
- *  - 메인 2 · 샌드(#E4DCD3): 글자, 보조 요소
- *  - 포인트 · 액티브 블루(#00AAD2): 경로, 누를 수 있는 것, 진행 상태
+ *  - 바탕 · 크림(#FFF8EE): 화면 바탕, 카드
+ *  - 메인 · 하늘(#4C8DF6): 버튼, 경로선, 진행 상태
+ *  - 포인트 · 살구(#FF9C73): 쪽지, 펫, 하트, 보상
  *
- * 현대 블루는 여러 출처에서 공통으로 확인되는 값이다. 액티브 블루와 샌드는 공식 값으로
- * 확인하지 못해 현대차 톤을 참고해 정한 값이니, 정확한 브랜드 값은 현대차 가이드로 확인해 바꾼다.
- * 색을 더 늘리지 않는다. 상태 구분이 필요하면 글자와 모양으로 구분한다.
+ * 글자는 색으로 세지 않는 중립색 두 가지(진한 남색 [Ink], 흰색)만 쓴다.
+ * 아래의 나머지 값은 모두 이 세 색의 진하기만 바꾼 것이다. 새 색을 만들지 않는다.
  */
 object TodakColors {
-    // ── 메인 1: 현대 블루 계열 ──
-    val HyundaiBlue = Color(0xFF002C5F)
-    val Background = Color(0xFF001A3A)
-    val Panel = HyundaiBlue
-    val PanelDeep = Color(0xFF00234C)
-    val Edge = Color(0xFF123E73)
-    val EdgeStrong = Color(0xFF1F5290)
+    // ── 기본 세 색 ──
+    val Cream = Color(0xFFFFF8EE)
+    val Sky = Color(0xFF4C8DF6)
+    val Apricot = Color(0xFFFF9C73)
 
-    /** 눌렀을 때 쓰는 보조 버튼과 눌림 상태. */
-    val Neutral = Color(0xFF1C4A80)
-    val Disabled = Color(0xFF3A5A82)
+    // ── 글자(중립) ──
+    val Ink = Color(0xFF23304A)
+    val OnColor = Color.White
 
-    // ── 메인 2: 샌드 ──
-    val Sand = Color(0xFFE4DCD3)
+    // ── 크림 단계 ──
+    val Background = Cream
+    /** 크림 바탕 위에 올리는 카드. */
+    val Panel = Color.White
+    /** 카드 안에서 한 칸 들어간 곳. */
+    val PanelDeep = Color(0xFFFFF3E3)
+    val Edge = Color(0xFFF2E6D6)
+    val EdgeStrong = Color(0xFFE5D4BE)
+    val Disabled = Color(0xFFEFE8DE)
 
-    // ── 포인트: 액티브 블루 ──
-    val Route = Color(0xFF00AAD2)
+    // ── 하늘 단계 ──
+    val Route = Sky
+    /** 흰 글자를 올리는 버튼 바탕, 하늘색 글자. */
+    val RouteDeep = Color(0xFF2F6FD6)
+    /** 보조 버튼과 선택 칩의 옅은 바탕. 글자는 [RouteDeep]. */
+    val Neutral = Color(0xFFE6EFFE)
 
-    /** 포인트의 어두운 단계. 흰 글자를 올리는 버튼 바탕에 쓴다. */
-    val RouteDeep = Color(0xFF007EA3)
+    // ── 살구 단계 ──
+    /** 살구색 글자와 테두리. 크림·흰 바탕에서 읽히도록 진하게 했다. */
+    val ApricotDeep = Color(0xFFD9653A)
+    val ApricotSoft = Color(0xFFFFEADF)
 
     // ── 글자 ──
-    val TextSecondary = Sand
-    val TextDim = Color(0xFFA9B6C8)
+    val Text = Ink
+    val TextSecondary = Color(0xFF56627C)
+    val TextDim = Color(0xFF8C95A8)
 
-    // 예전 이름은 세 가지 색 안으로 모은다. 새 색을 만들지 않는다.
-    val Good = Route
-    val Warm = Sand
-    val Danger = Sand
+    // 예전 이름은 세 가지 색 안으로 모은다.
+    val Good = RouteDeep
+    val Warm = ApricotDeep
+    val Danger = ApricotDeep
+    val Sand = TextSecondary
+    val HyundaiBlue = Ink
 }

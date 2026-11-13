@@ -56,8 +56,10 @@ class VehicleSignalAndGleoTest {
     fun `VehicleSignalTracker tracks turn signal hold duration and odometer deltas`() {
         val tracker = VehicleSignalTracker()
         assertEquals(0f, tracker.onTurnSignalChanged(TurnSignalState.RIGHT, 1_000L), 0.01f)
+        assertEquals(TurnSignalState.RIGHT, tracker.activeSignal)
         assertEquals(1.8f, tracker.currentSignalHoldSeconds(2_800L), 0.01f)
         assertEquals(2.2f, tracker.onTurnSignalChanged(TurnSignalState.OFF, 3_200L), 0.01f)
+        assertEquals(TurnSignalState.OFF, tracker.activeSignal)
 
         // Odometer first reading establishes baseline (0 delta), subsequent reading returns delta
         assertEquals(0f, tracker.onOdometerUpdated(14520.0), 0.001f)

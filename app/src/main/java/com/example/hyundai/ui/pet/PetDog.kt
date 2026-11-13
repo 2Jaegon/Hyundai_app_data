@@ -56,7 +56,7 @@ enum class PetPose(
     /** (2, 0) Begging: 깜빡이 유지 대기·음성 녹음 경청·쪽지 승인 대기 시 두 발로 서서 기다리는 포즈 */
     BEG("귀 쫑긋 대기", R.drawable.pet_pose_beg, 2, 0),
 
-    /** (2, 1) Happy: 쪽지 청취·공감(좋아요)·레벨업 시 하트와 별·꽃이 피어나는 행복 포즈 */
+    /** (2, 1) Happy: 쪽지 청취·공감(좋아요)·레벨업 시 하트와 별이 피어나는 행복 포즈 */
     HAPPY("행복 만점", R.drawable.pet_pose_happy, 2, 1),
 
     /** (2, 2) Senior: Lv.4 이상 안경과 수염을 단 베테랑 매너견 포즈 */
@@ -94,6 +94,18 @@ enum class PetPose(
             (gear == GearState.D && speedKmh < 1f) || (gear != GearState.D && headlampOn) -> SLEEP
             gear == GearState.D && speedKmh >= 1f -> RUN
             else -> forLevel(level)
+        }
+
+        /**
+         * 주행 화면의 포즈. 평소에는 운전자를 바라보는 성장 단계 포즈로 차분히 앉아 있고,
+         * 쪽지가 오면 두 발로 서서 쪽지를 들고, 하트를 보내면 기뻐한다.
+         */
+        fun forDrive(state: AppUiState, holdingLetter: Boolean): PetPose = when {
+            state.heartReactionBanner != null -> HAPPY
+            holdingLetter -> BEG
+            state.evaluation.mannerPhase == MannerTurnPhase.VERIFIED || state.mannerSparkleActive -> EAT
+            state.telemetry.gear == GearState.D && state.telemetry.speedKmh < 1f -> SLEEP
+            else -> forLevel(state.activePet.level)
         }
 
         /** [AppUiState]에서 현재 상황 및 매너점수(레벨)에 맞는 포즈를 계산한다. */
@@ -184,8 +196,7 @@ fun PetModel(
         ),
         label = "bob"
     )
-
-    val bobPx = kotlin.math.round(if (excited) -8f * bob.value else -4f * bob.value)
+    val amplitude = if (excited) 8f else 4f
 
     Box(modifier = modifier, contentAlignment = Alignment.Center) {
         Image(
@@ -196,7 +207,8 @@ fun PetModel(
             modifier = Modifier
                 .fillMaxSize()
                 .graphicsLayer {
-                    translationY = bobPx
+                    // 값을 그리기 단계에서만 읽어서, 통통 튀는 동안 화면을 다시 구성(recompose)하지 않는다.
+                    translationY = kotlin.math.round(-amplitude * bob.value * density)
                 }
         )
     }

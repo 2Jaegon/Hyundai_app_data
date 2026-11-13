@@ -30,7 +30,14 @@ class RangeAdvisorTest {
 
     @Test
     fun warningTextShowsBatteryFirst() {
-        assertEquals("배터리 14% · 정차하면 충전소를 찾아 드릴게요", RangeAdvisor.warning(14, 30, 10_000.0))
-        assertEquals("주행가능 5km · 정차하면 충전소를 찾아 드릴게요", RangeAdvisor.warning(null, 5, 10_000.0))
+        assertEquals("배터리 14% · 주차하면 충전소를 찾아 드릴게요", RangeAdvisor.warning(14, 30, 10_000.0))
+        assertEquals("주행가능 5km · 주차하면 충전소를 찾아 드릴게요", RangeAdvisor.warning(null, 5, 10_000.0))
+    }
+
+    @Test
+    fun warningNamesRangeWhenOnlyRangeIsShort() {
+        // 배터리는 넉넉해도 남은 경로보다 주행가능거리가 짧으면, 배터리가 아니라 거리를 알려야 한다.
+        assertEquals("주행가능 10km · 주차하면 충전소를 찾아 드릴게요", RangeAdvisor.warning(60, 10, 20_000.0))
+        assertNull(RangeAdvisor.warning(60, 300, 20_000.0))
     }
 }

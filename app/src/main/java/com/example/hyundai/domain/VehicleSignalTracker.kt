@@ -30,7 +30,9 @@ class VehicleSignalTracker {
     private var lastLocationAtMs: Long = 0L
     private var lastSpeedKmh: Float = 0f
 
-    private var activeSignal: TurnSignalState = TurnSignalState.OFF
+    /** 차량 신호로 받은 방향지시등(시연 조작판이 그린 깜빡이는 여기에 들어오지 않는다). */
+    var activeSignal: TurnSignalState = TurnSignalState.OFF
+        private set
     private var signalStartedAtMs: Long = 0L
 
     private var lastOdometerKm: Double? = null
