@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  평문 HTTP는 막고, 에뮬레이터 안에서 도는 Pleos 가상 콘솔(127.0.0.1:8088)만 예외로 둔다.
+  콘솔은 같은 기기 안에서만 열려 있으므로 밖으로 나가는 통신은 모두 HTTPS를 그대로 쓴다.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false" />
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">127.0.0.1</domain>
+        <domain includeSubdomains="false">localhost</domain>
+    </domain-config>
+</network-security-config>

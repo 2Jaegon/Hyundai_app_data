@@ -32,6 +32,7 @@ import com.example.hyundai.ui.HyundaiRewardShopModal
 import com.example.hyundai.ui.ParkingReportAndTireTrackModal
 import com.example.hyundai.ui.VoiceNoteComposeModal
 import com.example.hyundai.ui.debug.SimulatorDrawer
+import com.example.hyundai.ui.destination.DestinationScreen
 import com.example.hyundai.ui.drive.DriveScreen
 import com.example.hyundai.ui.inbox.NoteInboxScreen
 import com.example.hyundai.ui.parked.ParkedScreen
@@ -53,6 +54,9 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         requestRuntimePermissions()
+        intent?.getStringExtra("scene")?.let {
+            viewModel.runShowcaseScenario(it, hideDrawer = intent.getBooleanExtra("hide_drawer", false))
+        }
         // 차량 화면은 주행 중 꺼지면 안 된다.
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         setContent {
@@ -76,6 +80,14 @@ class MainActivity : ComponentActivity() {
                     )
                 }
             }
+        }
+    }
+
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        intent.getStringExtra("scene")?.let {
+            viewModel.runShowcaseScenario(it, hideDrawer = intent.getBooleanExtra("hide_drawer", false))
         }
     }
 
@@ -125,6 +137,8 @@ fun TodakGilDashboard(
                 state = state,
                 onOpenInbox = { viewModel.openScreen(AppScreen.INBOX) },
                 onOpenSettings = { viewModel.openScreen(AppScreen.SETTINGS) },
+                onOpenDestination = viewModel::openDestinationScreen,
+                onToggleMap3d = viewModel::toggleMap3d,
                 petAnimated = !driveCovered
             )
             if (showParked) {
@@ -137,6 +151,7 @@ fun TodakGilDashboard(
                     onOpenVoiceComposer = viewModel::openVoiceNoteComposer,
                     onListenNote = viewModel::listenToNoteViaTts,
                     onStopTts = viewModel::stopTtsPlayback,
+                    onOpenDestination = viewModel::openDestinationScreen,
                     // 대시보드가 덮고 있는 동안 아래 지도 화면의 버튼이 눌리지 않도록 터치를 막는다.
                     modifier = Modifier.clickable(
                         interactionSource = remember { MutableInteractionSource() },
@@ -161,31 +176,25 @@ fun TodakGilDashboard(
                     onBack = viewModel::closeScreen,
                     onToggleAutoPlay = viewModel::toggleAutoPlayTts,
                     onToggleCommuteOnly = viewModel::toggleCommuteBandFilter,
-                    onSelectMapTheme = viewModel::setMapTheme
+                    onSelectMapTheme = viewModel::setMapTheme,
+                    onToggleMap3d = viewModel::toggleMap3d,
+                    onSelectDriveView = viewModel::setDriveView
                 )
             }
-
-            SimulatorDrawer(
-                state = state,
-                onSafeDriveStep = { viewModel.simulateSafeDrivingStep(0.5f) },
-                onMannerTurnSuccess = { viewModel.simulateMannerLaneChange(TurnSignalState.RIGHT) },
-                onBlinkerAbuseTest = viewModel::simulateBlinkerAbuseAttempt,
-                onHarshBrakeTest = viewModel::simulateHarshBrakingEvent,
-                onToggleGearPark = {
-                    val nextGear = if (state.telemetry.gear == GearState.P) GearState.D else GearState.P
-                    viewModel.shiftGear(nextGear)
-                },
-                onDemoNote = { text ->
-                    viewModel.openVoiceNoteComposer(force = true)
-                    viewModel.selectVoicePresetForAiTest(text)
-                },
-                onCycleMapTheme = viewModel::cycleMapTheme,
-                onToggleHeadlamp = viewModel::toggleHeadlampSimulation,
-                onStopAtLight = viewModel::simulateStopAtLight,
-                onVoiceApprove = viewModel::approveIncomingNoteByVoice,
-                onRestartSimulation = viewModel::restartSimulation,
-                modifier = Modifier.align(Alignment.BottomCenter)
-            )
+            if (canBrowse && state.screen == AppScreen.DESTINATION) {
+                DestinationScreen(
+                    state = state,
+                    onBack = viewModel::closeScreen,
+                    onSearch = viewModel::searchPlaces,
+                    onShowList = viewModel::showPlaceList,
+                    onGoSaved = viewModel::goToSavedPlace,
+                    onGuide = viewModel::startGuidance,
+                    onHandOff = viewModel::handOffToNavi,
+                    onSave = viewModel::savePlace,
+                    onOpenNaviSearch = viewModel::openNaviSearch,
+                    onOpenNaviChargers = viewModel::openNaviChargers
+                )
+            }
 
             if (state.showVoiceComposeDialog) {
                 VoiceNoteComposeModal(
@@ -208,6 +217,32 @@ fun TodakGilDashboard(
                     state = state,
                     onRedeem = viewModel::redeemRewardItem,
                     onDismiss = { viewModel.setRewardShopModalVisible(false) }
+                )
+            }
+
+            // 시뮬레이터 제어바는 모달(리포트, 보상샵, 음성작성) 위에서도 항상 조작할 수 있도록 최상단에 그린다.
+            if (!state.hideSimulatorDrawer) {
+                SimulatorDrawer(
+                    state = state,
+                    onSafeDriveStep = { viewModel.simulateSafeDrivingStep(0.5f) },
+                    onMannerTurnSuccess = { viewModel.simulateMannerLaneChange(TurnSignalState.RIGHT) },
+                    onBlinkerAbuseTest = viewModel::simulateBlinkerAbuseAttempt,
+                    onHarshBrakeTest = viewModel::simulateHarshBrakingEvent,
+                    onToggleGearPark = {
+                        val nextGear = if (state.telemetry.gear == GearState.P) GearState.D else GearState.P
+                        viewModel.shiftGear(nextGear)
+                    },
+                    onDemoNote = { text ->
+                        viewModel.openVoiceNoteComposer(force = true)
+                        viewModel.selectVoicePresetForAiTest(text)
+                    },
+                    onCycleMapTheme = viewModel::cycleMapTheme,
+                    onToggleHeadlamp = viewModel::toggleHeadlampSimulation,
+                    onStopAtLight = viewModel::simulateStopAtLight,
+                    onVoiceApprove = viewModel::approveIncomingNoteByVoice,
+                    onRestartSimulation = viewModel::restartSimulation,
+                    onRunScenario = { scene -> viewModel.runShowcaseScenario(scene, hideDrawer = false) },
+                    modifier = Modifier.align(Alignment.BottomCenter)
                 )
             }
         }

@@ -20,12 +20,17 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -33,13 +38,14 @@ import com.example.hyundai.domain.NoteInbox
 import com.example.hyundai.model.MannerTurnPhase
 import com.example.hyundai.model.VoiceNote
 import com.example.hyundai.ui.pet.PetModel
+import com.example.hyundai.ui.pet.PetPose
 import com.example.hyundai.ui.theme.TodakColors
 import com.example.hyundai.viewmodel.AppUiState
 import java.util.Locale
 
 /**
- * 정차(P/N/R) 화면. 펫, 오늘의 운전, 쪽지를 차분히 살펴보는 곳이다.
- * 글자는 14sp 이상, 설명문 대신 숫자·막대·짧은 단어만 쓴다.
+ * 정차(P/N/R) 홈 화면. 기본 펫 제로, 현재 성장 단계와 경험치, 오늘 사용할 수 있는 쪽지 작성권,
+ * 오늘의 운전 기록과 도로 위 쪽지를 한눈에 살펴보는 화면이다.
  */
 @Composable
 fun ParkedScreen(
@@ -51,7 +57,8 @@ fun ParkedScreen(
     onOpenVoiceComposer: () -> Unit,
     onListenNote: (VoiceNote) -> Unit,
     onStopTts: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onOpenDestination: () -> Unit = {}
 ) {
     Column(
         modifier = modifier
@@ -60,7 +67,7 @@ fun ParkedScreen(
             .padding(horizontal = 24.dp, vertical = 16.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        ParkedHeader(state, onOpenRewardShop, onOpenParkingReport, onOpenSettings)
+        ParkedHeader(state, onOpenRewardShop, onOpenParkingReport, onOpenSettings, onOpenDestination)
 
         Row(
             modifier = Modifier
@@ -70,7 +77,7 @@ fun ParkedScreen(
         ) {
             PetPane(
                 modifier = Modifier
-                    .weight(0.30f)
+                    .weight(0.32f)
                     .fillMaxHeight(),
                 state = state
             )
@@ -82,7 +89,7 @@ fun ParkedScreen(
             )
             NotesPane(
                 modifier = Modifier
-                    .weight(0.40f)
+                    .weight(0.38f)
                     .fillMaxHeight(),
                 state = state,
                 onOpenVoiceComposer = onOpenVoiceComposer,
@@ -104,7 +111,7 @@ private fun PanelBox(
         modifier = modifier
             .clip(RoundedCornerShape(22.dp))
             .background(TodakColors.Panel)
-            .border(1.dp, border, RoundedCornerShape(22.dp))
+            .border(1.5.dp, border, RoundedCornerShape(22.dp))
             .padding(20.dp)
     ) { content() }
 }
@@ -114,22 +121,47 @@ private fun ParkedHeader(
     state: AppUiState,
     onOpenRewardShop: () -> Unit,
     onOpenParkingReport: () -> Unit,
-    onOpenSettings: () -> Unit
+    onOpenSettings: () -> Unit,
+    onOpenDestination: () -> Unit
 ) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text("온길", color = Color.White, fontSize = 26.sp, fontWeight = FontWeight.ExtraBold)
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Text("온길", color = Color.White, fontSize = 26.sp, fontWeight = FontWeight.ExtraBold)
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(TodakColors.Panel)
+                    .border(1.dp, TodakColors.Edge, RoundedCornerShape(10.dp))
+                    .padding(horizontal = 12.dp, vertical = 6.dp)
+            ) {
+                Text(
+                    "기어 ${state.telemetry.gear.label} · 홈 화면",
+                    color = TodakColors.TextSecondary,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        }
 
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
-            Chip(text = "작성권 ${state.remainingNoteTickets}장", color = TodakColors.Route, onClick = null)
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+            Chip(
+                text = "오늘의 쪽지 작성권 ${state.remainingNoteTickets}장",
+                color = TodakColors.Route,
+                onClick = null
+            )
             Chip(
                 text = String.format(Locale.KOREA, "%,dP", state.warmthPoints),
                 color = TodakColors.Warm,
                 onClick = onOpenRewardShop
             )
+            Chip(text = "목적지", color = TodakColors.Route, onClick = onOpenDestination)
             Chip(text = "리포트", color = TodakColors.Good, onClick = onOpenParkingReport)
             Chip(text = "설정", color = TodakColors.Warm, onClick = onOpenSettings)
         }
@@ -144,82 +176,167 @@ private fun Chip(text: String, color: Color, onClick: (() -> Unit)?) {
             .background(color.copy(alpha = 0.16f))
             .border(1.dp, color.copy(alpha = 0.7f), RoundedCornerShape(14.dp))
             .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
-            .padding(horizontal = 18.dp, vertical = 10.dp)
+            .padding(horizontal = 16.dp, vertical = 10.dp)
     ) {
-        Text(text, color = color, fontSize = 18.sp, fontWeight = FontWeight.ExtraBold)
+        Text(text, color = color, fontSize = 17.sp, fontWeight = FontWeight.ExtraBold)
     }
 }
 
-// ───────────────────────── 펫 ─────────────────────────
+// ───────────────────────── 펫 (제로) ─────────────────────────
 
 @Composable
 private fun PetPane(modifier: Modifier, state: AppUiState) {
     val pet = state.activePet
     val accent = Color(pet.badgeColorHex)
     val expRatio = (pet.currentExp.toFloat() / pet.maxExp.toFloat()).coerceIn(0f, 1f)
+    val isLevelingUp = state.levelUpBanner != null
+    var previewPoseIndex by remember { mutableStateOf(-1) }
+    val allPoses = PetPose.entries
+    val activePose = if (previewPoseIndex in allPoses.indices) {
+        allPoses[previewPoseIndex]
+    } else {
+        PetPose.fromState(state, excited = isLevelingUp)
+    }
 
-    PanelBox(modifier = modifier, border = accent.copy(alpha = 0.45f)) {
+    val panelBorder = if (isLevelingUp) TodakColors.Good else accent.copy(alpha = 0.55f)
+
+    PanelBox(modifier = modifier, border = panelBorder) {
         Column(
             modifier = Modifier.fillMaxSize(),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
+            if (state.levelUpBanner != null) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(TodakColors.Good.copy(alpha = 0.22f))
+                        .border(1.5.dp, TodakColors.Good, RoundedCornerShape(14.dp))
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = state.levelUpBanner,
+                        color = Color.White,
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        textAlign = TextAlign.Center
+                    )
+                }
+            }
+
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .weight(1f)
                     .clip(RoundedCornerShape(18.dp))
                     .background(
-                        Brush.radialGradient(listOf(accent.copy(alpha = 0.28f), TodakColors.PanelDeep))
+                        Brush.radialGradient(
+                            listOf(
+                                if (isLevelingUp) TodakColors.Good.copy(alpha = 0.42f) else accent.copy(alpha = 0.28f),
+                                TodakColors.PanelDeep
+                            )
+                        )
                     )
+                    .border(
+                        width = if (isLevelingUp) 2.dp else 1.dp,
+                        color = if (isLevelingUp) TodakColors.Good else TodakColors.Edge,
+                        shape = RoundedCornerShape(18.dp)
+                    )
+                    .clickable {
+                        previewPoseIndex = if (previewPoseIndex + 1 >= allPoses.size) -1 else previewPoseIndex + 1
+                    }
             ) {
                 PetModel(
                     accent = accent,
                     modifier = Modifier
                         .fillMaxSize()
-                        .padding(6.dp),
+                        .padding(8.dp),
                     level = pet.level,
-                    spin = state.heldNote != null, // 계속 움직이면 매 프레임 다시 그려 버튼 반응이 느려진다
+                    spin = state.heldNote != null || isLevelingUp,
                     holdingNote = state.heldNote != null,
-                    excited = state.isTtsSpeaking
+                    excited = state.isTtsSpeaking || isLevelingUp,
+                    pose = if (isLevelingUp) PetPose.forLevel(pet.level) else activePose
                 )
             }
 
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
                 Text(pet.name, color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.ExtraBold)
                 Box(
                     modifier = Modifier
                         .clip(RoundedCornerShape(10.dp))
                         .background(accent.copy(alpha = 0.22f))
+                        .border(1.dp, accent.copy(alpha = 0.6f), RoundedCornerShape(10.dp))
                         .padding(horizontal = 10.dp, vertical = 4.dp)
                 ) {
-                    Text("Lv.${pet.level}", color = accent, fontSize = 16.sp, fontWeight = FontWeight.ExtraBold)
+                    Text(
+                        "Lv.${pet.level} · ${activePose.label}",
+                        color = accent,
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.ExtraBold
+                    )
                 }
             }
 
-            LinearProgressIndicator(
-                progress = { expRatio },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(10.dp)
-                    .clip(RoundedCornerShape(6.dp)),
-                color = accent,
-                trackColor = TodakColors.Edge
+            // 제로의 현재 성장 단계 표시
+            Text(
+                text = "성장 단계: ${pet.stageName}",
+                color = TodakColors.Warm,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Bold
             )
+
+            // 경험치 바 및 수치 표시
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "경험치 (EXP)",
+                        color = TodakColors.TextSecondary,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = "${pet.currentExp} / ${pet.maxExp} EXP (${(expRatio * 100).toInt()}%)",
+                        color = accent,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.ExtraBold
+                    )
+                }
+                LinearProgressIndicator(
+                    progress = { expRatio },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(11.dp)
+                        .clip(RoundedCornerShape(6.dp)),
+                    color = if (isLevelingUp) TodakColors.Good else accent,
+                    trackColor = TodakColors.Edge
+                )
+            }
 
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(16.dp))
                     .background(TodakColors.Edge)
-                    .padding(14.dp)
+                    .padding(12.dp)
             ) {
                 Text(
                     text = pet.currentSpeech,
                     color = Color.White,
-                    fontSize = 16.sp,
-                    lineHeight = 22.sp,
-                    maxLines = 3,
+                    fontSize = 15.sp,
+                    lineHeight = 21.sp,
+                    maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
             }
@@ -241,33 +358,33 @@ private fun DrivingPane(modifier: Modifier, state: AppUiState) {
             Text("오늘의 운전", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.ExtraBold)
 
             ScoreRow(
-                title = "안전 주행",
+                title = "Safe Drive · 안전 주행",
                 count = eval.completedSafeBlocks,
                 progress = (eval.safeBlockProgressKm / eval.safeBlockTargetKm).coerceIn(0f, 1f),
-                detail = String.format(Locale.KOREA, "%.1f / %.0fkm", eval.safeBlockProgressKm, eval.safeBlockTargetKm),
+                detail = String.format(Locale.KOREA, "%.1f / %.0fkm (+10 EXP · +5 P)", eval.safeBlockProgressKm, eval.safeBlockTargetKm),
                 accent = TodakColors.Route
             )
             ScoreRow(
-                title = "부드러운 주행",
+                title = "Smooth Drive · 부드러운 주행",
                 count = eval.completedSmoothWindows,
                 progress = (eval.smoothWindowProgressKm / eval.smoothWindowTargetKm).coerceIn(0f, 1f),
-                detail = String.format(Locale.KOREA, "%.1f / %.0fkm", eval.smoothWindowProgressKm, eval.smoothWindowTargetKm),
+                detail = String.format(Locale.KOREA, "%.1f / %.0fkm (+20 EXP · 감점 없음)", eval.smoothWindowProgressKm, eval.smoothWindowTargetKm),
                 accent = TodakColors.Good
             )
 
             // 방향전환은 막대 대신, 지금 상태가 눈에 띌 때만 한 줄로 알려 준다.
             val (note, tone) = when (eval.mannerPhase) {
-                MannerTurnPhase.VERIFIED -> "방금 매너 방향전환을 인정받았어요" to TodakColors.Good
+                MannerTurnPhase.VERIFIED -> "방금 매너 방향전환을 인정받았어요 (+15 EXP · +10 P)" to TodakColors.Good
                 MannerTurnPhase.ABUSE_BLOCKED -> "이번 깜빡이는 적립되지 않았어요" to TodakColors.Danger
                 MannerTurnPhase.COOLDOWN -> "잠시 후 다시 적립돼요" to TodakColors.Warm
-                else -> null to TodakColors.TextDim
+                else -> "깜빡이 1.5초 유지 + 방향전환 시 +15 EXP · +10 P" to TodakColors.TextDim
             }
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(16.dp))
                     .background(TodakColors.PanelDeep)
-                    .border(1.dp, tone.copy(alpha = if (note != null) 0.6f else 0.2f), RoundedCornerShape(16.dp))
+                    .border(1.dp, tone.copy(alpha = if (eval.mannerPhase == MannerTurnPhase.VERIFIED) 0.7f else 0.25f), RoundedCornerShape(16.dp))
                     .padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
@@ -276,11 +393,11 @@ private fun DrivingPane(modifier: Modifier, state: AppUiState) {
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("매너 방향전환", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                    Text("Manner Drive · 매너 운전", color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Bold)
                     Text("${eval.completedMannerTurns}회", color = TodakColors.Good, fontSize = 18.sp, fontWeight = FontWeight.ExtraBold)
                 }
                 if (note != null) {
-                    Text(note, color = tone, fontSize = 16.sp)
+                    Text(note, color = tone, fontSize = 15.sp)
                 }
             }
         }
@@ -302,7 +419,7 @@ private fun ScoreRow(title: String, count: Int, progress: Float, detail: String,
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(title, color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+            Text(title, color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Bold)
             Text("${count}회", color = accent, fontSize = 18.sp, fontWeight = FontWeight.ExtraBold)
         }
         LinearProgressIndicator(

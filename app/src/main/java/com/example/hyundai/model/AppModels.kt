@@ -79,7 +79,7 @@ data class DrivingEvaluationState(
 )
 
 /** 정차 중에만 여는 화면. HOME은 따로 연 화면이 없는 상태다. */
-enum class AppScreen { HOME, INBOX, SETTINGS }
+enum class AppScreen { HOME, INBOX, SETTINGS, DESTINATION }
 
 data class PetCharacter(
     val id: String,

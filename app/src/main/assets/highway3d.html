@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<!--
+  Pleos 가상 콘솔(127.0.0.1:8088)이 제공하는 3D 고속도로 장면을 온길 주행 화면 아래에 깐다.
+  장면 코드(highway-view.js, three.js)는 콘솔 서버에서 불러오고, 속도·기어·조향은 온길이 window.ongilSet으로 넘긴다.
+-->
+<style>
+  html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: #050a12; }
+  canvas { display: block; width: 100%; height: 100%; }
+</style>
+<script type="importmap">{"imports":{"three":"/vendor/three/three.module.min.js","three/addons/":"/vendor/three/addons/"}}</script>
+</head>
+<body data-console-theme="highway">
+<canvas id="road"></canvas>
+<script type="module">
+  const signals = { speed_kph: 0, accelerator_pct: 0, brake_pct: 0, steering_deg: 0, gear: "Park" };
+  window.ongilSet = (speedKph, gear, steeringDeg) => {
+    signals.speed_kph = Math.max(0, Number(speedKph) || 0);
+    signals.gear = String(gear || "Park");
+    signals.steering_deg = Number(steeringDeg) || 0;
+  };
+  // 상태는 console.log로 온길에 알린다(자바스크립트 브리지를 열지 않기 위해). 바뀔 때만 보낸다.
+  let last = null;
+  const say = (text) => { if (text !== last) { last = text; console.log("ONGIL:" + text); } };
+  try {
+    const probe = document.createElement("canvas").getContext("webgl2");
+    if (!probe) { say("이 기기는 3D 도로(WebGL 2)를 그릴 수 없어요"); throw new Error("no webgl2"); }
+    const { createHighwayView } = await import("/highway-view.js");
+    await createHighwayView(
+      document.getElementById("road"),
+      () => ({ ...signals, viewMode: "third-person", wipers: "Off", guidance: true, ldw: "off", fcw: false, demo: false }),
+      (state) => say(state && state.error ? "3D 도로를 그리지 못했어요" : "")
+    );
+    say("");
+  } catch (e) {
+    console.error("highway3d: " + (e && e.message ? e.message : e));
+    if (!last) say("3D 도로를 불러오지 못했어요");
+  }
+</script>
+</body>
+</html>

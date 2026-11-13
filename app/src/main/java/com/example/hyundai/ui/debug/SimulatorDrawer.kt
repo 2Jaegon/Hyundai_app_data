@@ -56,6 +56,7 @@ fun SimulatorDrawer(
     onStopAtLight: () -> Unit,
     onVoiceApprove: () -> Unit,
     onRestartSimulation: () -> Unit = {},
+    onRunScenario: (String) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     // 테스트 및 시연 때 바로 조작할 수 있도록 기본으로 펼쳐 둔다.
@@ -110,6 +111,17 @@ fun SimulatorDrawer(
                         onToggleHeadlamp
                     )
                     SimButton("시뮬레이션 재시작", TodakColors.Danger, onRestartSimulation)
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    SimButton("1.홈", TodakColors.RouteDeep) { onRunScenario("1_home") }
+                    SimButton("2.P→D전환", TodakColors.RouteDeep) { onRunScenario("2_drive_start") }
+                    SimButton("3.매너운전", TodakColors.RouteDeep) { onRunScenario("3_manner_drive") }
+                    SimButton("4·5.쪽지수신+하트", TodakColors.RouteDeep) { onRunScenario("4_5_note_flow") }
+                    SimButton("6.음성작성", TodakColors.RouteDeep) { onRunScenario("6_voice_compose") }
+                    SimButton("7.리포트", TodakColors.RouteDeep) { onRunScenario("7_driving_report") }
+                    SimButton("8.제로성장", TodakColors.RouteDeep) { onRunScenario("8_pet_growth") }
+                    SimButton("9-1.내쪽지반응", TodakColors.RouteDeep) { onRunScenario("9a_note_reaction") }
+                    SimButton("9-2.포인트혜택", TodakColors.RouteDeep) { onRunScenario("9b_reward_shop") }
                 }
             }
         }

@@ -10,19 +10,21 @@ Internal identifiers still say `Todak` (`TodakColors`, `TodakModals`, `TodakGilD
 
 ## Commands
 
-Windows + PowerShell. Gradle needs Android Studio's JDK:
+Windows + PowerShell. Gradle 8.10.2 needs JDK 17 or 21. Android Studio's bundled `jbr` is now JDK 25, which fails with a bare `What went wrong: 25.0.4`, so use the JDK 21 in `~\.jdks`:
 
 ```powershell
-$env:JAVA_HOME="C:\Program Files\Android\Android Studio\jbr"
+$env:JAVA_HOME="C:\Users\ljgon\.jdks\jbr-21.0.11"
 .\gradlew.bat :app:testDebugUnitTest :app:assembleDebug --console=plain
 .\gradlew.bat :app:testDebugUnitTest --tests "com.example.hyundai.nav.RouteWindowTest"   # one test class
 ```
 
 - A full build+test takes 1–3 minutes and the IDE shell tool times out around 2–5 minutes. Redirect output to a file (`*> "$env:TEMP\build.log"`), run in the background, then read the log tail.
 - Unit tests are pure JVM (`org.json` is added as a real `testImplementation` because android.jar's version does not work on the JVM). Logic that must be tested lives in plain Kotlin (`nav/`, `domain/`), not in composables.
+- `adb` is not on PATH on this PC. Use `& "$env:LOCALAPPDATA\Android\Sdk\platform-tools\adb.exe"` (the `sdk.dir` in `local.properties`) wherever `adb` appears below.
 - Install/run on the emulator `Pleos_Connect_v2_1_0`: `adb install -r -t app\build\outputs\apk\debug\app-debug.apk` then `adb shell am start -n com.example.hyundai/.MainActivity`. IDE "deploy" sometimes does not reinstall; use adb.
 - Emulator quirks: the stock navigation app (`ai.umos.maps.android.navigation.app`) periodically takes the foreground and respawns if you `force-stop` it. Use `adb emu geo fix <lng> <lat>` to move GPS; a fix far from the route (>2 km) makes the app run its simulated demo drive.
 - The Pleos SDK artifacts come from the `nexus-playground.pleos.ai` Maven repo (see `settings.gradle.kts`).
+- Data collector (`dcx_collector/`, Python, separate from the app; rules and allowed sources in `dcx_collector/GEMINI.md`, setup in `INSTALL.md`): `$env:PYTHONUTF8=1; python collect.py --selftest`, then `collect.py --source <bobaedream|ppomppu> ...`, `classify.py --all` (needs `agy`), `--export` writes `data/*.csv`. `dcx_collector/data/` is scraped third-party content and should not go to a public repo.
 
 ## Architecture
 
@@ -40,7 +42,11 @@ Single-activity MVVM. `MainViewModel` owns one `AppUiState` (a big immutable dat
 
 **Pleos SDK facts learned the hard way** (all in `PleosSdkManager`): `FUSED_LOCATION` is a runtime ("dangerous") permission and its listener receives `LocationData`, not `Location`; TTS never emits `onReady`, so speak optimistically and fall back to Android TTS on error; STT needs `Locale.KOREA` (`ko_KR`); `TextToSpeech.initialize(listener)` fails with a lateinit error, use `initialize()` then attach the event listener with retries.
 
-**Notes/pet domain:** `AiNoteModerator` (rule-based block/purify/mask PII + category and lifetime), `NoteInbox` helpers, one pet "제로" (`ui/pet/PetDog.kt`, drawn on a Canvas; `PetModel` is the composable). A note being read sets `heldNote` and the pet holds it. Settings persist in `SettingsStore` (SharedPreferences). All note data is local seed data; there is no backend.
+**Destinations (`nav/Place*.kt`, `ui/destination/DestinationScreen.kt`, parked only):** search uses Nominatim (`PlaceRepository`, falls back to `OfflinePlaces`); nearby chargers use Nominatim `amenity=charging_station` first, Overpass only as fallback (public Overpass servers all timed out when tested, 2026-11). Home/work/favorites/recents merge NaviHelper bookmarks with locally saved ones (`SavedPlaces.merge`). NaviHelper 3.0.5 really supports `requestRoute(RouteInfo)` (handoff to the stock nav), `getBookmarkInfo`/`getRecentDestinationInfo`, and `requestNavigationScreen(SearchPlace/NearbyChargingStations/...)`; `RouteInfo`'s `poiId`/`poiSubId`/`poiProvider` are non-null Strings (pass `""`).
+
+**Pleos virtual console (`http://127.0.0.1:8088`, served inside the emulator; `adb forward tcp:8088 tcp:8088` to open it on the PC):** a vehicle-signal simulator, not a nav. `sdk/VirtualConsoleClient` polls `/vehicle/state` read-only each second and `vehicle/ConsoleStateParser` keeps only values whose domain is live (`source != "default"` or `emulator_active`/`input_active`), otherwise the defaults (speed 0, battery 100%) would overwrite the demo drive. Writes (`PUT /vehicle/...`) return 503 `emulator_inactive` until emulation is switched on in the console page. Cleartext HTTP is allowed only for 127.0.0.1/localhost (`res/xml/network_security_config.xml`). The optional 3D road (`ui/drive/Highway3dView.kt`, `assets/highway3d.html`) loads the console's `highway-view.js` in a WebView (`<body data-console-theme="highway">` is required because `highway-view.js` skips `renderer.render()` unless `document.body.dataset.consoleTheme === 'highway'`). First WebView creation took >5 s on the main thread and caused an ANR, so the provider is warmed on `Dispatchers.IO` first.
+
+**Notes/pet domain:** `AiNoteModerator` (rule-based block/purify/mask PII + category and lifetime), `NoteInbox` helpers, one pet "제로" (`ui/pet/PetDog.kt`, `PetModel` + `PetPose` 9-grid pixel-art poodle sprites in `res/drawable-nodpi/pet_pose_*.png`: `PUPPY` Lv.1, `ADULT` Lv.2~3, `SENIOR` Lv.4+, plus situational `PLAY`, `SLEEP`, `RUN`, `EAT`, `BEG`, `HAPPY`). Settings persist in `SettingsStore` (SharedPreferences). All note data is local seed data; there is no backend.
 
 ## Working conventions here
 

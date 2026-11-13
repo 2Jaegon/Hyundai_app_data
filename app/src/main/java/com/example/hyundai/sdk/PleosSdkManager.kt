@@ -7,6 +7,7 @@ import ai.pleos.playground.location.fused.model.LocationData
 import ai.pleos.playground.location.fused.model.ProximityAlertEvent
 import ai.pleos.playground.location.fused.model.ProximityAlertRequest
 import ai.pleos.playground.location.fused.model.ProximityTransition
+import ai.pleos.playground.navi.constants.BookmarkType
 import ai.pleos.playground.navi.constants.NaviErrorCode
 import ai.pleos.playground.navi.constants.NavigationStatus
 import ai.pleos.playground.navi.constants.RouteOption
@@ -18,6 +19,8 @@ import ai.pleos.playground.navi.data.CurrentLocationInfo
 import ai.pleos.playground.navi.data.DestinationArrivedInfo
 import ai.pleos.playground.navi.data.DestinationInfo
 import ai.pleos.playground.navi.data.DrivingInfo
+import ai.pleos.playground.navi.data.NavigationScreenRequest
+import ai.pleos.playground.navi.data.RouteInfo
 import ai.pleos.playground.navi.data.RecentDestinationInfo
 import ai.pleos.playground.navi.data.RouteStartInfo
 import ai.pleos.playground.navi.data.RouteStateInfo
@@ -60,7 +63,11 @@ import com.example.hyundai.domain.VehicleSignalTracker
 import com.example.hyundai.model.GearState
 import com.example.hyundai.model.SdkConnectionStatus
 import com.example.hyundai.model.TurnSignalState
+import com.example.hyundai.nav.GeoPoint
+import com.example.hyundai.nav.NavPlace
+import com.example.hyundai.nav.PlaceKind
 import com.example.hyundai.nav.RouteRepository
+import com.example.hyundai.nav.SavedPlaces
 import com.example.hyundai.nav.TurnIcon
 import com.example.hyundai.nav.TurnMapping
 import java.util.Locale
@@ -109,6 +116,9 @@ class PleosSdkManager(
 
         /** Vehicle SDK 실시간 전조등(LowBeam) 점등 상태 콜백. */
         fun onVehicleHeadlampChanged(headlampOn: Boolean) {}
+
+        /** 기본 내비에 저장된 집·회사·즐겨찾기와 최근 목적지가 도착했을 때. */
+        fun onNaviPlaces(places: SavedPlaces) {}
     }
 
     private val appContext = context.applicationContext
@@ -298,15 +308,35 @@ class PleosSdkManager(
             )
         }
         override fun onWayPointInfo(waypointInfoList: List<WaypointInfo>) {}
-        override fun onRecentDestinationInfo(recentDestinationInfoList: List<RecentDestinationInfo>) {}
-        override fun onBookmarkInfo(bookmarkInfoList: List<BookmarkInfo>) {}
+        override fun onRecentDestinationInfo(recentDestinationInfoList: List<RecentDestinationInfo>) {
+            naviRecents = recentDestinationInfoList.mapNotNull { r ->
+                naviPlace(r.name, r.address, r.latitude, r.longitude, PlaceKind.RECENT)
+            }
+            publishNaviPlaces()
+        }
+        override fun onBookmarkInfo(bookmarkInfoList: List<BookmarkInfo>) {
+            naviBookmarks = bookmarkInfoList.mapNotNull { b ->
+                val kind = when (b.category) {
+                    BookmarkType.HOME -> PlaceKind.HOME
+                    BookmarkType.OFFICE -> PlaceKind.WORK
+                    BookmarkType.EV_CHARGING_STATION -> PlaceKind.CHARGER
+                    else -> PlaceKind.FAVORITE
+                }
+                naviPlace(b.name, b.address, b.latitude, b.longitude, kind)
+            }
+            publishNaviPlaces()
+        }
         override fun onCurrentRoadSpeedLimit(speedLimit: Int) {
             listener.onNaviRoadUpdated(null, speedLimit)
         }
         override fun onCameraAlert(cameraAlertList: List<CameraAlert>) {}
         override fun onDrivingInfo(drivingInfo: DrivingInfo) {}
-        override fun onBookMarkChanged() {}
-        override fun onDestinationChanged() {}
+        override fun onBookMarkChanged() {
+            runCatching { naviHelper?.getBookmarkInfo() }
+        }
+        override fun onDestinationChanged() {
+            runCatching { naviHelper?.getRecentDestinationInfo() }
+        }
         override fun onNavigationStatus(status: NavigationStatus) {}
         override fun onTBTInfo(tbtInfoList: List<TBTInfo>) {
             tbtInfoList.firstOrNull()?.let {
@@ -720,6 +750,8 @@ class PleosSdkManager(
             helper.addListener(naviListener)
             runCatching { helper.getCurrentLocationInfo() }
             runCatching { helper.getRouteStateInfo() }
+            runCatching { helper.getBookmarkInfo() }
+            runCatching { helper.getRecentDestinationInfo() }
             naviHelper = helper
             status = status.copy(
                 naviConnected = true,
@@ -733,6 +765,64 @@ class PleosSdkManager(
                 naviDetail = "NaviHelper 3.0.5 초기화 실패: ${e.message}"
             )
         }
+    }
+
+    // --- NaviHelper: 기본 내비의 즐겨찾기·최근 목적지와 길안내 넘기기 ---
+
+    @Volatile private var naviBookmarks: List<NavPlace> = emptyList()
+    @Volatile private var naviRecents: List<NavPlace> = emptyList()
+
+    private fun naviPlace(name: String?, address: String?, lat: Double, lng: Double, kind: PlaceKind): NavPlace? {
+        if (!lat.isFinite() || !lng.isFinite() || (lat == 0.0 && lng == 0.0)) return null
+        val label = name?.takeIf { it.isNotBlank() } ?: address?.takeIf { it.isNotBlank() } ?: return null
+        return NavPlace(label, address.orEmpty(), GeoPoint(lat, lng), kind)
+    }
+
+    private fun publishNaviPlaces() {
+        if (released) return
+        val marks = naviBookmarks
+        listener.onNaviPlaces(
+            SavedPlaces(
+                home = marks.firstOrNull { it.kind == PlaceKind.HOME },
+                work = marks.firstOrNull { it.kind == PlaceKind.WORK },
+                favorites = marks.filter { it.kind == PlaceKind.FAVORITE || it.kind == PlaceKind.CHARGER },
+                recents = naviRecents
+            )
+        )
+    }
+
+    /** 기본 내비에 저장된 장소를 다시 받아 온다. 결과는 [Listener.onNaviPlaces]로 온다. */
+    fun refreshNaviPlaces() {
+        val helper = naviHelper ?: return
+        runCatching { helper.getBookmarkInfo() }
+        runCatching { helper.getRecentDestinationInfo() }
+    }
+
+    /** 기본 내비에 [place]까지 길안내를 요청한다. 연결이 없거나 거절되면 false. */
+    fun requestNaviRoute(place: NavPlace): Boolean {
+        val helper = naviHelper ?: return false
+        val route = RouteInfo(
+            place.point.lat, place.point.lng, null, null,
+            // 검색 없이 좌표로만 안내하므로 POI 번호는 비워 둔다.
+            place.name, "", place.address, "",
+            RouteOption.RECOMMENDED, "", false
+        )
+        return runCatching { helper.requestRoute(route) }
+            .onFailure { Log.w(tag, "NaviHelper requestRoute failed: ${it.message}") }
+            .isSuccess
+    }
+
+    /** 기본 내비의 장소 검색 화면을 [query]로 연다. */
+    fun openNaviSearch(query: String): Boolean = openNaviScreen(NavigationScreenRequest.SearchPlace(query))
+
+    /** 기본 내비의 주변 충전소 화면을 연다. */
+    fun openNaviChargers(): Boolean = openNaviScreen(NavigationScreenRequest.NearbyChargingStations)
+
+    private fun openNaviScreen(request: NavigationScreenRequest): Boolean {
+        val helper = naviHelper ?: return false
+        return runCatching { helper.requestNavigationScreen(request) }
+            .onFailure { Log.w(tag, "NaviHelper requestNavigationScreen failed: ${it.message}") }
+            .isSuccess
     }
 
     fun speakAnonymousNote(text: String) {

@@ -67,8 +67,11 @@ private const val NOTE_ZONE_GLOW_LAYER = "todak-note-zone-glow"
 private const val NOTE_ZONE_LINE_LAYER = "todak-note-zone-line"
 private const val NOTE_ZONE_CORE_LAYER = "todak-note-zone-core"
 
-/** 기울기를 32°로 완만하게 고정해 주변 건물이나 지형에 의해 시야가 들썩이지 않게 한다. */
-private const val CAMERA_TILT = 32.0
+/** 3D 시점 기울기. 32°로 완만하게 고정해 주변 건물이나 지형에 의해 시야가 들썩이지 않게 한다. */
+private const val CAMERA_TILT_3D = 32.0
+
+/** 2D 시점: 위에서 곧게 내려다본다(진행 방향은 계속 위쪽). */
+private const val CAMERA_TILT_2D = 0.0
 
 /** 건물 높이나 교차로 거리에 상관없이 시야 높이를 항상 동일하게 유지하는 고정 줌 레벨. */
 internal const val FIXED_CAMERA_ZOOM = 18.6
@@ -118,8 +121,11 @@ fun NavMap(
     isDay: Boolean,
     modifier: Modifier = Modifier,
     /** 다른 화면이 지도를 덮고 있으면 true. 안 보이는 지도를 프레임마다 갱신하지 않는다. */
-    covered: Boolean = false
+    covered: Boolean = false,
+    /** false면 기울이지 않은 2D 지도. */
+    tilted: Boolean = true
 ) {
+    val tilt = if (tilted) CAMERA_TILT_3D else CAMERA_TILT_2D
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val nightJson = remember(context) {
@@ -172,8 +178,8 @@ fun NavMap(
             // 카메라 시야 높이(Zoom)와 기울기(Pitch)를 엔진 레벨에서 완전히 잠가 어떤 상황에서도 출렁이지 않게 한다.
             m.setMinZoomPreference(FIXED_CAMERA_ZOOM)
             m.setMaxZoomPreference(FIXED_CAMERA_ZOOM)
-            m.setMinPitchPreference(CAMERA_TILT)
-            m.setMaxPitchPreference(CAMERA_TILT)
+            m.setMinPitchPreference(tilt)
+            m.setMaxPitchPreference(tilt)
             map = m
         }
         // 고도 타일 형식을 못 읽으면 플래그만 켜고, 실제 다시 불러오는 일은 아래 효과가 한다.
@@ -199,9 +205,13 @@ fun NavMap(
 
     // 카메라와 경로선: 새 위치가 올 때마다 지금 위치에서 새 위치까지 1초 동안 같은 속도로 이어서 움직인다.
     // 차는 카메라 가운데에 고정된 점으로 그리고, 경로선은 같은 속도로 차 위치까지만 지워서 끊김이 없다.
-    LaunchedEffect(map, styleReady, isDay) {
+    LaunchedEffect(map, styleReady, isDay, tilt) {
         val m = map ?: return@LaunchedEffect
         if (!styleReady) return@LaunchedEffect
+        // 기울기를 바꿀 때는 잠금 범위를 먼저 넓혔다가 새 값으로 다시 잠근다(최솟값이 최댓값보다 커지지 않게).
+        m.setMinPitchPreference(CAMERA_TILT_2D)
+        m.setMaxPitchPreference(tilt)
+        m.setMinPitchPreference(tilt)
         val style = m.style ?: return@LaunchedEffect
 
         var windowTrack: RouteTrack? = null
@@ -236,7 +246,7 @@ fun NavMap(
             val position = CameraPosition.Builder()
                 .target(LatLng(pose.position.lat, pose.position.lng))
                 .zoom(FIXED_CAMERA_ZOOM)
-                .tilt(CAMERA_TILT)
+                .tilt(tilt)
                 .bearing(pose.bearing)
                 .padding(0.0, fixedTopPaddingPx, 0.0, 0.0)
                 .build()

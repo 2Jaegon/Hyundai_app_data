@@ -19,6 +19,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.hyundai.nav.DriveView
 import com.example.hyundai.nav.MapTheme
 import com.example.hyundai.ui.common.BigToggle
 import com.example.hyundai.ui.common.ScreenFrame
@@ -34,6 +35,8 @@ fun SettingsScreen(
     onToggleAutoPlay: () -> Unit,
     onToggleCommuteOnly: () -> Unit,
     onSelectMapTheme: (MapTheme) -> Unit,
+    onToggleMap3d: () -> Unit = {},
+    onSelectDriveView: (DriveView) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     ScreenFrame(title = "설정", onBack = onBack, modifier = modifier) {
@@ -66,6 +69,28 @@ fun SettingsScreen(
                         ),
                         selected = state.mapTheme,
                         onSelect = onSelectMapTheme
+                    )
+                }
+            )
+            SettingRow(
+                title = "지도 시점",
+                hint = "2D는 위에서 내려다봐요",
+                control = {
+                    Segmented(
+                        options = listOf(true to "3D", false to "2D"),
+                        selected = state.map3d,
+                        onSelect = { if (it != state.map3d) onToggleMap3d() }
+                    )
+                }
+            )
+            SettingRow(
+                title = "주행 화면",
+                hint = "3D 도로는 가상 콘솔이 켜진 에뮬레이터에서만 보여요",
+                control = {
+                    Segmented(
+                        options = listOf(DriveView.MAP to "지도", DriveView.HIGHWAY_3D to "3D 도로"),
+                        selected = state.driveView,
+                        onSelect = onSelectDriveView
                     )
                 }
             )

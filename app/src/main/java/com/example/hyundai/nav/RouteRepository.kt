@@ -3,9 +3,6 @@ package com.example.hyundai.nav
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
-import java.io.ByteArrayOutputStream
-import java.net.HttpURLConnection
-import java.net.URL
 import java.util.Locale
 
 /**
@@ -35,37 +32,8 @@ class RouteRepository(
             "%s/route/v1/driving/%.4f,%.4f;%.4f,%.4f?overview=full&geometries=geojson&steps=true",
             baseUrl, origin.lng, origin.lat, destination.lng, destination.lat
         )
-        var conn: HttpURLConnection? = null
-        return try {
-            conn = (URL(url).openConnection() as HttpURLConnection).apply {
-                connectTimeout = 8_000
-                readTimeout = 12_000
-                setRequestProperty("User-Agent", "TodakGil-Prototype")
-            }
-            if (conn.responseCode != HttpURLConnection.HTTP_OK) return null
-            if (conn.contentLengthLong > MAX_BODY_BYTES) return null
-            val body = conn.inputStream.use { readLimited(it) } ?: return null
-            OsrmRouteParser.parse(body)
-        } catch (_: Exception) {
-            null
-        } finally {
-            conn?.disconnect()
-        }
-    }
-
-    /** 응답을 [MAX_BODY_BYTES]까지만 읽는다. 넘으면 null. */
-    private fun readLimited(input: java.io.InputStream): String? {
-        val out = ByteArrayOutputStream()
-        val buffer = ByteArray(8 * 1024)
-        var total = 0
-        while (true) {
-            val n = input.read(buffer)
-            if (n < 0) break
-            total += n
-            if (total > MAX_BODY_BYTES) return null
-            out.write(buffer, 0, n)
-        }
-        return out.toString(Charsets.UTF_8.name())
+        val body = HttpText.get(url, maxBytes = MAX_BODY_BYTES) ?: return null
+        return runCatching { OsrmRouteParser.parse(body) }.getOrNull()
     }
 
     companion object {

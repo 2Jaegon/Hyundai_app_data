@@ -34,7 +34,16 @@ import com.example.hyundai.nav.RouteData
 import com.example.hyundai.nav.RouteRepository
 import com.example.hyundai.nav.RouteTrack
 import com.example.hyundai.nav.TurnIcon
+import com.example.hyundai.nav.DriveView
+import com.example.hyundai.nav.NavPlace
+import com.example.hyundai.nav.PlaceKind
+import com.example.hyundai.nav.PlaceListMode
+import com.example.hyundai.nav.PlaceRepository
+import com.example.hyundai.nav.PlaceSearchUi
+import com.example.hyundai.nav.SavedPlaces
 import com.example.hyundai.sdk.PleosSdkManager
+import com.example.hyundai.sdk.VirtualConsoleClient
+import com.example.hyundai.vehicle.ConsoleVehicleState
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -78,7 +87,33 @@ data class AppUiState(
     val parkingReport: ParkingReportSummary = ParkingReportSummary(),
     val tireTracks: List<TireTrackNode> = initialTireTracks(),
     val rewardItems: List<RewardShopItem> = initialRewardItems(),
-    val toastBanner: String = "온길 · 도로 위를 따뜻하게"
+    val toastBanner: String = "온길 · 도로 위를 따뜻하게",
+    /** 지도를 기울인 3D로 볼지(false면 위에서 내려다보는 2D). */
+    val map3d: Boolean = true,
+    val driveView: DriveView = DriveView.MAP,
+    /** 지금 안내 중인 목적지 이름. */
+    val destinationName: String = "판교역",
+    /** 기본 내비 즐겨찾기와 이 앱에 저장한 장소를 합친 것. */
+    val places: SavedPlaces = SavedPlaces(),
+    val placeSearch: PlaceSearchUi = PlaceSearchUi(),
+    /** 가상 콘솔 차량 신호. 콘솔에 연결되지 않았으면 null. */
+    val console: ConsoleVehicleState? = null,
+    /** 시나리오 3: 매너운전 달성 시 제로 아이콘 반짝임 효과 */
+    val mannerSparkleActive: Boolean = false,
+    /** 시나리오 4·5·6: 주행 중 음성 안내/대화 HUD 프롬프트 */
+    val voiceHudPrompt: String? = null,
+    /** 시나리오 4·5·6: 운전자 발화("응", "좋아요", "쪽지 남겨줘") 표시 */
+    val voiceHudUserUtterance: String? = null,
+    /** 시나리오 5·6: 하트 전달 또는 음성 쪽지 등록 완료 배너 */
+    val heartReactionBanner: String? = null,
+    /** 시나리오 8: 제로 성장(레벨업) 배너 */
+    val levelUpBanner: String? = null,
+    /** 시나리오 2: 기어 P -> D 전환 안내 배너 */
+    val gearTransitionBanner: String? = null,
+    /** 시나리오 9-1: 쪽지함 진입 시 '내가 남긴 쪽지' 탭 바로 열기 */
+    val initialInboxTabMine: Boolean = false,
+    /** 캡처/녹화 시 하단 시뮬레이터 제어바 숨김 여부 */
+    val hideSimulatorDrawer: Boolean = false
 ) {
     val activePet: PetCharacter
         get() = pet
@@ -101,6 +136,9 @@ class MainViewModel(application: Application) :
     private var releaseJob: Job? = null
     private var lastListenAtMs = 0L
     private var signalHoldJob: Job? = null
+    private var showcaseJob: Job? = null
+    private var sparkleClearJob: Job? = null
+    private var bannerClearJob: Job? = null
 
     // --- Navigation (route-first map) ---
     private val routeRepository = RouteRepository()
@@ -114,6 +152,15 @@ class MainViewModel(application: Application) :
     private var liveTurnDistM = 0.0
     private var liveTurnAtMs = 0L
 
+    // --- 목적지·가상 콘솔 ---
+    private val placeRepository = PlaceRepository()
+    private var searchJob: Job? = null
+    /** 이 앱에서 직접 저장한 장소(기기에 저장). */
+    private var localPlaces = SavedPlaces()
+    /** 기본 내비(NaviHelper)에서 받은 장소(저장하지 않음). */
+    private var naviPlaces = SavedPlaces()
+    private val consoleClient = VirtualConsoleClient(viewModelScope, ::onConsoleState)
+
     init {
         sdkManager.initializeAll()
         startCooldownTicker()
@@ -125,9 +172,14 @@ class MainViewModel(application: Application) :
                 autoPlayTts = saved.autoPlayTts,
                 showOnlyCommuteBand = saved.commuteBandOnly,
                 mapTheme = saved.mapTheme,
+                map3d = saved.map3d,
+                driveView = saved.driveView,
+                places = saved.places,
                 activeIncomingNote = NoteInbox.nextIncoming(it.notes, commuteOnly = saved.commuteBandOnly)
             )
         }
+        localPlaces = saved.places
+        consoleClient.start()
         // 달리는 중에는 쪽지함·설정을 열 수 없다. 차가 움직이기 시작하면 열려 있던 화면을 닫는다.
         viewModelScope.launch {
             _uiState.map { NoteAccess.canBrowse(it.telemetry.gear, it.telemetry.speedKmh) }
@@ -143,18 +195,11 @@ class MainViewModel(application: Application) :
         return NoteAccess.canBrowse(t.gear, t.speedKmh)
     }
 
-    /** 차가 움직이기 시작하면 화면을 직접 눌러야 하는 것(쪽지함, 설정, 작성·리포트·보상 창)을 모두 닫는다. */
+    /** 차가 움직이기 시작하면 화면을 직접 눌러야 하는 것(쪽지함, 설정, 리포트·보상 창)을 모두 닫는다. */
     private fun closeAllTouchSurfaces() {
-        val s = _uiState.value
-        if (s.showVoiceComposeDialog) {
-            recordingJob?.cancel()
-            sdkManager.stopVoiceNoteCapture()
-        }
         _uiState.update {
             it.copy(
                 screen = AppScreen.HOME,
-                showVoiceComposeDialog = false,
-                isRecordingStt = false,
                 showParkingReportModal = false,
                 showRewardShopModal = false
             )
@@ -298,6 +343,250 @@ class MainViewModel(application: Application) :
             val t = _uiState.value.telemetry
             loadRoute(GeoPoint(t.latitude, t.longitude), dest)
         }
+    }
+
+    // --- 가상 콘솔 차량 신호 (읽기 전용) ---
+
+    /** 처음 연결했을 때 이미 있던 하이패스 결제는 새 결제로 알리지 않는다. */
+    private var lastTollKey: String? = null
+    private var tollSeeded = false
+
+    private fun onConsoleState(state: ConsoleVehicleState?) {
+        val before = _uiState.value
+        val prev = before.console
+        if (state == prev) return
+
+        // 콘솔에서 기어를 바꾼 순간에만 따라간다. 같은 값을 매초 덮어쓰면 시연 조작판의 기어 버튼이 먹히지 않는다.
+        val gear = state?.gear
+        if (gear != null && gear != prev?.gear && gear != before.telemetry.gear) shiftGear(gear)
+
+        var tollBanner: String? = null
+        val toll = state?.toll
+        if (state != null) {
+            if (tollSeeded && toll != null && toll.key != lastTollKey) {
+                tollBanner = buildString {
+                    append("하이패스 ").append(toll.gateName)
+                    toll.amountWon?.let { append(String.format(java.util.Locale.KOREA, " %,d원 결제", it)) }
+                    toll.balanceWon?.let { append(String.format(java.util.Locale.KOREA, " · 잔액 %,d원", it)) }
+                }
+            }
+            lastTollKey = toll?.key
+            tollSeeded = true
+        }
+
+        _uiState.update { s ->
+            val speed = state?.speedKph
+            s.copy(
+                console = state,
+                telemetry = if (speed != null) s.telemetry.copy(speedKmh = speed) else s.telemetry,
+                toastBanner = tollBanner ?: s.toastBanner
+            )
+        }
+    }
+
+    // --- 목적지 (정차 중에만 연다) ---
+
+    private fun carPoint(): GeoPoint {
+        val t = _uiState.value.telemetry
+        return GeoPoint(t.latitude, t.longitude)
+    }
+
+    fun openDestinationScreen() {
+        openScreen(AppScreen.DESTINATION)
+        if (_uiState.value.screen != AppScreen.DESTINATION) return
+        sdkManager.refreshNaviPlaces()
+        showPlaceList(PlaceListMode.RECENT)
+    }
+
+    /** 최근·즐겨찾기·충전소 목록으로 바꾼다. 검색 목록은 [searchPlaces]가 만든다. */
+    fun showPlaceList(mode: PlaceListMode) {
+        if (mode == PlaceListMode.CHARGERS) {
+            searchChargers()
+            return
+        }
+        searchJob?.cancel()
+        val places = _uiState.value.places
+        val (list, empty) = when (mode) {
+            PlaceListMode.FAVORITES ->
+                (listOfNotNull(places.home, places.work) + places.favorites) to "즐겨찾기가 없어요. 검색한 곳을 저장해 보세요"
+            PlaceListMode.SEARCH -> _uiState.value.placeSearch.results to "가고 싶은 곳을 검색해 보세요"
+            else -> places.recents to "최근 목적지가 없어요"
+        }
+        val here = carPoint()
+        _uiState.update {
+            it.copy(
+                placeSearch = it.placeSearch.copy(
+                    mode = mode,
+                    results = list.map { p -> p.copy(distanceM = GeoMath.distanceM(here, p.point)) },
+                    loading = false,
+                    offline = false,
+                    message = if (list.isEmpty()) empty else null
+                )
+            )
+        }
+    }
+
+    fun searchPlaces(query: String) {
+        val q = query.trim()
+        if (q.isEmpty()) return
+        searchJob?.cancel()
+        _uiState.update {
+            it.copy(placeSearch = PlaceSearchUi(mode = PlaceListMode.SEARCH, query = q, loading = true))
+        }
+        searchJob = viewModelScope.launch {
+            val result = placeRepository.search(q, carPoint())
+            _uiState.update {
+                it.copy(
+                    placeSearch = it.placeSearch.copy(
+                        results = result.places,
+                        loading = false,
+                        offline = result.offline,
+                        message = when {
+                            result.places.isNotEmpty() -> null
+                            result.offline -> "인터넷에 연결되지 않아 찾지 못했어요"
+                            else -> "찾는 곳이 없어요"
+                        }
+                    )
+                )
+            }
+        }
+    }
+
+    fun searchChargers() {
+        searchJob?.cancel()
+        _uiState.update {
+            it.copy(placeSearch = it.placeSearch.copy(mode = PlaceListMode.CHARGERS, results = emptyList(), loading = true, message = null))
+        }
+        searchJob = viewModelScope.launch {
+            val found = placeRepository.nearbyChargers(carPoint())
+            _uiState.update {
+                it.copy(
+                    placeSearch = it.placeSearch.copy(
+                        results = found.orEmpty(),
+                        loading = false,
+                        offline = found == null,
+                        message = when {
+                            found == null -> "충전소 정보를 받지 못했어요"
+                            found.isEmpty() -> "5km 안에 충전소가 없어요"
+                            else -> null
+                        }
+                    )
+                )
+            }
+        }
+    }
+
+    /** 집·회사 바로가기. 저장된 곳이 없으면 저장하는 방법을 알려 준다. */
+    fun goToSavedPlace(kind: PlaceKind) {
+        val places = _uiState.value.places
+        val place = when (kind) {
+            PlaceKind.HOME -> places.home
+            PlaceKind.WORK -> places.work
+            else -> null
+        }
+        if (place != null) {
+            startGuidance(place)
+            return
+        }
+        val label = if (kind == PlaceKind.HOME) "집" else "회사"
+        _uiState.update {
+            it.copy(placeSearch = it.placeSearch.copy(message = "${label}이 아직 없어요. 검색한 곳에서 '${label}로'를 눌러 저장해요"))
+        }
+    }
+
+    /** 온길 지도에 [place]까지 경로를 그리고 안내를 시작한다. */
+    fun startGuidance(place: NavPlace) {
+        if (!canBrowseNow()) return
+        loadRoute(carPoint(), place.point)
+        rememberRecent(place)
+        _uiState.update {
+            it.copy(
+                destinationName = place.name,
+                screen = AppScreen.HOME,
+                toastBanner = "${place.name}까지 안내를 시작해요"
+            )
+        }
+    }
+
+    /** 기본 내비에도 같은 목적지로 길안내를 넘긴다. 온길 지도는 기본 내비의 회전 안내(TBT)를 받아 따라간다. */
+    fun handOffToNavi(place: NavPlace) {
+        if (!canBrowseNow()) return
+        val ok = sdkManager.requestNaviRoute(place)
+        if (!ok) {
+            _uiState.update { it.copy(placeSearch = it.placeSearch.copy(message = "기본 내비에 연결하지 못했어요")) }
+            return
+        }
+        startGuidance(place)
+        _uiState.update { it.copy(toastBanner = "기본 내비에도 ${place.name} 안내를 넘겼어요") }
+    }
+
+    fun openNaviSearch(query: String) {
+        if (!sdkManager.openNaviSearch(query.trim())) {
+            _uiState.update { it.copy(placeSearch = it.placeSearch.copy(message = "기본 내비를 열지 못했어요")) }
+        }
+    }
+
+    fun openNaviChargers() {
+        if (!sdkManager.openNaviChargers()) {
+            _uiState.update { it.copy(placeSearch = it.placeSearch.copy(message = "기본 내비를 열지 못했어요")) }
+        }
+    }
+
+    /** 검색한 곳을 집·회사·즐겨찾기로 저장한다. */
+    fun savePlace(place: NavPlace, kind: PlaceKind) {
+        val stored = place.copy(kind = kind, distanceM = null)
+        localPlaces = when (kind) {
+            PlaceKind.HOME -> localPlaces.copy(home = stored)
+            PlaceKind.WORK -> localPlaces.copy(work = stored)
+            else -> localPlaces.copy(favorites = SavedPlaces.dedupe(listOf(stored) + localPlaces.favorites))
+        }
+        settingsStore.savePlaces(localPlaces)
+        refreshPlaces()
+        val label = when (kind) {
+            PlaceKind.HOME -> "집으로"
+            PlaceKind.WORK -> "회사로"
+            else -> "즐겨찾기에"
+        }
+        _uiState.update { it.copy(placeSearch = it.placeSearch.copy(message = "${place.name}을(를) ${label} 저장했어요")) }
+    }
+
+    private fun rememberRecent(place: NavPlace) {
+        val recent = place.copy(kind = PlaceKind.RECENT, distanceM = null)
+        localPlaces = localPlaces.copy(
+            recents = SavedPlaces.dedupe(listOf(recent) + localPlaces.recents).take(SavedPlaces.MAX_RECENTS)
+        )
+        settingsStore.savePlaces(localPlaces)
+        refreshPlaces()
+    }
+
+    private fun refreshPlaces() {
+        _uiState.update { it.copy(places = SavedPlaces.merge(naviPlaces, localPlaces)) }
+    }
+
+    override fun onNaviPlaces(places: SavedPlaces) {
+        viewModelScope.launch {
+            naviPlaces = places
+            refreshPlaces()
+            val s = _uiState.value
+            val mode = s.placeSearch.mode
+            if (s.screen == AppScreen.DESTINATION && (mode == PlaceListMode.RECENT || mode == PlaceListMode.FAVORITES)) {
+                showPlaceList(mode)
+            }
+        }
+    }
+
+    // --- 지도 시점 ---
+
+    fun toggleMap3d() {
+        if (!canBrowseNow()) return
+        val next = !_uiState.value.map3d
+        settingsStore.saveMap3d(next)
+        _uiState.update { it.copy(map3d = next) }
+    }
+
+    fun setDriveView(view: DriveView) {
+        settingsStore.saveDriveView(view)
+        _uiState.update { it.copy(driveView = view) }
     }
 
     /** 시연용: 지도 낮/밤을 자동 → 낮 → 밤 순서로 돌린다. */
@@ -653,6 +942,21 @@ class MainViewModel(application: Application) :
                     headingDeg = newHeading
                 )
             )
+            triggerMannerSparkle()
+        }
+    }
+
+    private fun triggerMannerSparkle() {
+        sparkleClearJob?.cancel()
+        _uiState.update {
+            it.copy(
+                mannerSparkleActive = true,
+                pet = it.pet.copy(currentSpeech = "방향지시등 매너운전 성공! 제로가 반짝반짝 기뻐해요 ✨")
+            )
+        }
+        sparkleClearJob = viewModelScope.launch {
+            delay(4000L)
+            _uiState.update { it.copy(mannerSparkleActive = false) }
         }
     }
 
@@ -735,6 +1039,11 @@ class MainViewModel(application: Application) :
                 mapTheme = current.mapTheme,
                 autoPlayTts = current.autoPlayTts,
                 showOnlyCommuteBand = current.showOnlyCommuteBand,
+                map3d = current.map3d,
+                driveView = current.driveView,
+                destinationName = current.destinationName,
+                places = current.places,
+                console = current.console,
                 notes = initialNotes,
                 activeIncomingNote = NoteInbox.nextIncoming(
                     initialNotes,
@@ -1007,8 +1316,14 @@ class MainViewModel(application: Application) :
                 parkingReport = it.parkingReport.copy(
                     todayTodakReceived = it.parkingReport.todayTodakReceived + 1
                 ),
+                heartReactionBanner = "♥ ${target.authorPetName}에게 하트가 전달되었어요! (+10 EXP · +15 P)",
                 toastBanner = "좋아요를 전했어요 (+10 EXP, +15 P)"
             )
+        }
+        bannerClearJob?.cancel()
+        bannerClearJob = viewModelScope.launch {
+            delay(4500L)
+            _uiState.update { it.copy(heartReactionBanner = null) }
         }
     }
 
@@ -1173,12 +1488,557 @@ class MainViewModel(application: Application) :
         _uiState.update {
             it.copy(
                 warmthPoints = it.warmthPoints - item.pointCost,
-                toastBanner = "[${item.brand}] '${item.title}' 교환 완료! 마이현대 앱 쿠폰함에 즉시 지급되었습니다."
+                toastBanner = "[${item.brand}] '${item.title}' 교환 시연 완료 (예시 화면 · 제휴 연계 예정)"
             )
         }
     }
 
+    /**
+     * 발표/시연 자료(1~9번) 촬영 및 검증을 위한 통합 시나리오 실행기.
+     * `adb shell am start -n com.example.hyundai/.MainActivity --es scene <scene_id>` 또는 제어바에서 호출한다.
+     */
+    fun runShowcaseScenario(scene: String, hideDrawer: Boolean = false) {
+        showcaseJob?.cancel()
+        recordingJob?.cancel()
+        signalHoldJob?.cancel()
+        ttsTimerJob?.cancel()
+        releaseJob?.cancel()
+        sparkleClearJob?.cancel()
+        bannerClearJob?.cancel()
+        sdkManager.stopSpeaking()
+        sdkManager.stopVoiceNoteCapture()
+
+        val baseNotes = initialVoiceNotes()
+        when (scene) {
+            "1_home" -> {
+                _uiState.update {
+                    it.copy(
+                        hideSimulatorDrawer = hideDrawer,
+                        screen = AppScreen.HOME,
+                        telemetry = it.telemetry.copy(gear = GearState.P, speedKmh = 0f, turnSignal = TurnSignalState.OFF, brakePressed = true),
+                        pet = initialPet(),
+                        totalExp = 340,
+                        warmthPoints = 1850,
+                        remainingNoteTickets = 3,
+                        maxDailyBaseTickets = 3,
+                        bonusTicketsEarnedToday = 1,
+                        notes = baseNotes,
+                        activeIncomingNote = baseNotes.first(),
+                        heldNote = null,
+                        isTtsSpeaking = false,
+                        showVoiceComposeDialog = false,
+                        showParkingReportModal = false,
+                        showRewardShopModal = false,
+                        mannerSparkleActive = false,
+                        voiceHudPrompt = null,
+                        voiceHudUserUtterance = null,
+                        heartReactionBanner = null,
+                        levelUpBanner = null,
+                        gearTransitionBanner = null
+                    )
+                }
+            }
+
+            "2_drive_start" -> {
+                showcaseJob = viewModelScope.launch {
+                    // 1) 주차(P) 홈 화면에서 시작
+                    _uiState.update {
+                        it.copy(
+                            hideSimulatorDrawer = hideDrawer,
+                            autoPlayTts = false,
+                            screen = AppScreen.HOME,
+                            telemetry = it.telemetry.copy(gear = GearState.P, speedKmh = 0f, turnSignal = TurnSignalState.OFF, brakePressed = true),
+                            pet = initialPet(),
+                            remainingNoteTickets = 3,
+                            heldNote = null,
+                            isTtsSpeaking = false,
+                            showVoiceComposeDialog = false,
+                            showParkingReportModal = false,
+                            showRewardShopModal = false,
+                            mannerSparkleActive = false,
+                            voiceHudPrompt = null,
+                            voiceHudUserUtterance = null,
+                            heartReactionBanner = null,
+                            levelUpBanner = null,
+                            gearTransitionBanner = null
+                        )
+                    }
+                    delay(2200L)
+                    // 2) 기어 P -> D 변경 및 주행 화면 전환
+                    _uiState.update {
+                        it.copy(
+                            telemetry = it.telemetry.copy(gear = GearState.D, speedKmh = 62f, brakePressed = false),
+                            gearTransitionBanner = "기어 P → D 변경 · 주행 중 최소 정보 화면으로 전환"
+                        )
+                    }
+                    delay(2200L)
+                    // 3) 배너 닫고 간결한 주행 화면(제로 아이콘 + 핵심 내비만 표시) 유지
+                    _uiState.update {
+                        it.copy(gearTransitionBanner = null)
+                    }
+                }
+            }
+
+            "3_manner_drive" -> {
+                showcaseJob = viewModelScope.launch {
+                    val baseHeading = _uiState.value.telemetry.headingDeg
+                    _uiState.update {
+                        it.copy(
+                            hideSimulatorDrawer = hideDrawer,
+                            autoPlayTts = false,
+                            screen = AppScreen.HOME,
+                            telemetry = it.telemetry.copy(gear = GearState.D, speedKmh = 64f, turnSignal = TurnSignalState.OFF, brakePressed = false),
+                            pet = initialPet().copy(currentSpeech = "안전하게 주행 중이에요."),
+                            heldNote = null,
+                            isTtsSpeaking = false,
+                            showVoiceComposeDialog = false,
+                            showParkingReportModal = false,
+                            showRewardShopModal = false,
+                            mannerSparkleActive = false,
+                            voiceHudPrompt = null,
+                            voiceHudUserUtterance = null,
+                            heartReactionBanner = null,
+                            gearTransitionBanner = null
+                        )
+                    }
+                    delay(1200L)
+                    // 방향지시등 우측 점등
+                    val step1 = evaluationEngine.onTurnSignalAndHeadingChanged(
+                        currentState = _uiState.value.evaluation,
+                        newSignal = TurnSignalState.RIGHT,
+                        currentHeadingDeg = baseHeading,
+                        holdDurationSec = 0.8f
+                    )
+                    _uiState.update {
+                        it.copy(
+                            telemetry = it.telemetry.copy(turnSignal = TurnSignalState.RIGHT),
+                            evaluation = step1.updatedState,
+                            pet = it.pet.copy(currentSpeech = "우측 방향지시등 점등 감지! 차선 변경을 확인하고 있어요.")
+                        )
+                    }
+                    delay(1300L)
+                    val step2 = evaluationEngine.onTurnSignalAndHeadingChanged(
+                        currentState = _uiState.value.evaluation,
+                        newSignal = TurnSignalState.RIGHT,
+                        currentHeadingDeg = baseHeading,
+                        holdDurationSec = 1.7f
+                    )
+                    _uiState.update {
+                        it.copy(
+                            evaluation = step2.updatedState,
+                            pet = it.pet.copy(currentSpeech = "깜빡이 1.7초 유지 완료! 부드럽게 방향을 바꾸고 있어요.")
+                        )
+                    }
+                    delay(1200L)
+                    // 방향 전환 완료 -> 매너운전 기록 및 제로 반짝임 반응
+                    val newHeading = (baseHeading + 30f) % 360f
+                    val step3 = evaluationEngine.onTurnSignalAndHeadingChanged(
+                        currentState = _uiState.value.evaluation,
+                        newSignal = TurnSignalState.RIGHT,
+                        currentHeadingDeg = newHeading,
+                        holdDurationSec = 2.3f
+                    )
+                    _uiState.update {
+                        it.copy(
+                            telemetry = it.telemetry.copy(turnSignal = TurnSignalState.RIGHT, headingDeg = newHeading),
+                            evaluation = step3.updatedState,
+                            totalExp = it.totalExp + 15,
+                            warmthPoints = it.warmthPoints + 10,
+                            mannerSparkleActive = true,
+                            pet = it.pet.copy(
+                                currentExp = (it.pet.currentExp + 15).coerceAtMost(it.pet.maxExp - 1),
+                                currentSpeech = "매너운전 기록 완료! 제로가 반짝반짝 기뻐해요 ✨ (+15 EXP · +10 P)"
+                            )
+                        )
+                    }
+                }
+            }
+
+            "3_manner_static" -> {
+                val baseHeading = _uiState.value.telemetry.headingDeg
+                val step1 = evaluationEngine.onTurnSignalAndHeadingChanged(
+                    currentState = DrivingEvaluationState(),
+                    newSignal = TurnSignalState.RIGHT,
+                    currentHeadingDeg = baseHeading,
+                    holdDurationSec = 1.6f
+                )
+                val step2 = evaluationEngine.onTurnSignalAndHeadingChanged(
+                    currentState = step1.updatedState,
+                    newSignal = TurnSignalState.RIGHT,
+                    currentHeadingDeg = (baseHeading + 30f) % 360f,
+                    holdDurationSec = 2.2f
+                )
+                _uiState.update {
+                    it.copy(
+                        hideSimulatorDrawer = hideDrawer,
+                        autoPlayTts = false,
+                        screen = AppScreen.HOME,
+                        telemetry = it.telemetry.copy(gear = GearState.D, speedKmh = 64f, turnSignal = TurnSignalState.RIGHT, brakePressed = false),
+                        evaluation = step2.updatedState,
+                        mannerSparkleActive = true,
+                        pet = initialPet().copy(
+                            currentExp = 135,
+                            currentSpeech = "매너운전 기록 완료! 제로가 반짝반짝 기뻐해요 ✨ (+15 EXP · +10 P)"
+                        ),
+                        voiceHudPrompt = null,
+                        voiceHudUserUtterance = null,
+                        heartReactionBanner = null,
+                        gearTransitionBanner = null
+                    )
+                }
+            }
+
+            "4_5_note_flow", "4_note_receive", "5_note_like" -> {
+                showcaseJob = viewModelScope.launch {
+                    val targetNote = baseNotes.first()
+                    progressM = 130.0
+                    publishNav()
+                    _uiState.update {
+                        it.copy(
+                            hideSimulatorDrawer = hideDrawer,
+                            autoPlayTts = false,
+                            screen = AppScreen.HOME,
+                            telemetry = it.telemetry.copy(gear = GearState.D, speedKmh = 60f, turnSignal = TurnSignalState.OFF, brakePressed = false),
+                            notes = baseNotes,
+                            activeIncomingNote = targetNote,
+                            heldNote = null,
+                            isTtsSpeaking = false,
+                            showVoiceComposeDialog = false,
+                            showParkingReportModal = false,
+                            showRewardShopModal = false,
+                            mannerSparkleActive = false,
+                            voiceHudPrompt = null,
+                            voiceHudUserUtterance = null,
+                            heartReactionBanner = null,
+                            gearTransitionBanner = null,
+                            pet = initialPet().copy(currentSpeech = "전방에 다른 운전자가 남긴 쪽지 구간이 있어요.")
+                        )
+                    }
+                    delay(1000L)
+                    // 1) 쪽지 구간 진입 안내
+                    progressM = 165.0
+                    publishNav()
+                    val promptText = "이 구간에 다른 운전자가 남긴 쪽지가 있어요. 들어볼까요?"
+                    sdkManager.speakAnonymousNote(promptText)
+                    _uiState.update {
+                        it.copy(
+                            voiceHudPrompt = promptText,
+                            voiceHudUserUtterance = null,
+                            pet = it.pet.copy(currentSpeech = promptText)
+                        )
+                    }
+                    delay(2600L)
+                    // 2) 운전자 "응" 응답
+                    _uiState.update {
+                        it.copy(voiceHudUserUtterance = "응")
+                    }
+                    delay(1200L)
+                    // 3) 쪽지 음성 재생 ("제로가 남긴 쪽지예요. 여기만 지나면 금방 풀려요. 오늘도 힘내세요!")
+                    val fullSpeech = "${NoteInbox.introLine(targetNote.authorPetName)} ${targetNote.displayText}"
+                    sdkManager.speakAnonymousNote(fullSpeech)
+                    val listenedNote = targetNote.copy(isListenedByMe = true, listenerCount = targetNote.listenerCount + 1)
+                    _uiState.update { state ->
+                        state.copy(
+                            notes = state.notes.map { if (it.id == targetNote.id) listenedNote else it },
+                            activeIncomingNote = listenedNote,
+                            heldNote = listenedNote,
+                            isTtsSpeaking = true,
+                            ttsSpeakingText = targetNote.displayText,
+                            voiceHudPrompt = "“$fullSpeech”",
+                            voiceHudUserUtterance = "응",
+                            pet = state.pet.copy(currentSpeech = fullSpeech)
+                        )
+                    }
+                    delay(4200L)
+                    if (scene == "4_note_receive") {
+                        _uiState.update {
+                            it.copy(
+                                isTtsSpeaking = false,
+                                voiceHudPrompt = "쪽지 재생 완료 · “$fullSpeech”"
+                            )
+                        }
+                        return@launch
+                    }
+                    // 4) 재생 종료 후 운전자 "좋아요" 반응 (5번 시나리오)
+                    _uiState.update {
+                        it.copy(
+                            isTtsSpeaking = false,
+                            voiceHudPrompt = "쪽지를 다 들었어요. 마음을 전하려면 말씀해 주세요.",
+                            voiceHudUserUtterance = "좋아요"
+                        )
+                    }
+                    delay(1200L)
+                    sendTodakReaction(targetNote.id)
+                    sdkManager.speakAnonymousNote("제로에게 따뜻한 하트를 전달했어요.")
+                    _uiState.update {
+                        it.copy(
+                            voiceHudPrompt = "하트 전달 완료! 작성자와 나에게 경험치와 포인트가 적립되었어요.",
+                            voiceHudUserUtterance = "좋아요",
+                            heartReactionBanner = "♥ 제로에게 하트가 전달되었어요! (+10 EXP · +15 P)"
+                        )
+                    }
+                }
+            }
+
+            "6_voice_compose" -> {
+                showcaseJob = viewModelScope.launch {
+                    val sampleNote = "비 오니까 다들 천천히 가요!"
+                    _uiState.update {
+                        it.copy(
+                            hideSimulatorDrawer = hideDrawer,
+                            autoPlayTts = false,
+                            screen = AppScreen.HOME,
+                            telemetry = it.telemetry.copy(gear = GearState.D, speedKmh = 56f, turnSignal = TurnSignalState.OFF, brakePressed = false),
+                            showVoiceComposeDialog = false,
+                            showParkingReportModal = false,
+                            showRewardShopModal = false,
+                            voiceHudPrompt = "주행 중 음성 명령 대기 중",
+                            voiceHudUserUtterance = "쪽지 남겨줘",
+                            heartReactionBanner = null
+                        )
+                    }
+                    delay(1200L)
+                    // 음성 녹음 시작
+                    _uiState.update {
+                        it.copy(
+                            showVoiceComposeDialog = true,
+                            isRecordingStt = true,
+                            recordingSecondsLeft = 9,
+                            draftVoiceText = "비 오니까...",
+                            voiceHudPrompt = "음성으로 쪽지를 작성하고 있어요",
+                            voiceHudUserUtterance = "쪽지 남겨줘"
+                        )
+                    }
+                    delay(1300L)
+                    _uiState.update {
+                        it.copy(
+                            isRecordingStt = true,
+                            recordingSecondsLeft = 8,
+                            draftVoiceText = sampleNote
+                        )
+                    }
+                    delay(1400L)
+                    // AI 안전 필터 통과 및 검수 완료 화면
+                    val mod = AiNoteModerator.analyzeAndFilter(sampleNote)
+                    _uiState.update {
+                        it.copy(
+                            isRecordingStt = false,
+                            recordingSecondsLeft = 10,
+                            draftVoiceText = sampleNote,
+                            lastModerationResult = mod
+                        )
+                    }
+                    delay(1800L)
+                    // 등록 완료 안내
+                    publishVoiceNote(asCommuteBandNote = true)
+                    sdkManager.speakAnonymousNote("쪽지 등록이 완료되었어요. 비 오니까 다들 천천히 가요!")
+                    _uiState.update {
+                        it.copy(
+                            voiceHudPrompt = "음성 쪽지 등록 완료 · “$sampleNote”",
+                            voiceHudUserUtterance = "쪽지 남겨줘",
+                            heartReactionBanner = "✓ 쪽지 등록 완료! “$sampleNote” (+15 EXP · +20 P)"
+                        )
+                    }
+                }
+            }
+
+            "6a_composing" -> {
+                val sampleNote = "비 오니까 다들 천천히 가요!"
+                _uiState.update {
+                    it.copy(
+                        hideSimulatorDrawer = hideDrawer,
+                        autoPlayTts = false,
+                        screen = AppScreen.HOME,
+                        telemetry = it.telemetry.copy(gear = GearState.D, speedKmh = 56f, turnSignal = TurnSignalState.OFF, brakePressed = false),
+                        showVoiceComposeDialog = true,
+                        isRecordingStt = true,
+                        recordingSecondsLeft = 8,
+                        draftVoiceText = sampleNote,
+                        voiceHudPrompt = "음성 쪽지 녹음 중",
+                        voiceHudUserUtterance = "쪽지 남겨줘",
+                        heartReactionBanner = null
+                    )
+                }
+            }
+
+            "6b_published" -> {
+                val sampleNote = "비 오니까 다들 천천히 가요!"
+                val mod = AiNoteModerator.analyzeAndFilter(sampleNote)
+                _uiState.update {
+                    it.copy(
+                        hideSimulatorDrawer = hideDrawer,
+                        autoPlayTts = false,
+                        screen = AppScreen.HOME,
+                        telemetry = it.telemetry.copy(gear = GearState.D, speedKmh = 56f, turnSignal = TurnSignalState.OFF, brakePressed = false),
+                        showVoiceComposeDialog = false,
+                        isRecordingStt = false,
+                        draftVoiceText = sampleNote,
+                        lastModerationResult = mod,
+                        remainingNoteTickets = 2,
+                        voiceHudPrompt = "음성 쪽지 등록 완료! 도로 위 안전 정보(3시간 유지)로 공유되었어요.",
+                        voiceHudUserUtterance = "비 오니까 다들 천천히 가요!",
+                        heartReactionBanner = "✓ 음성 쪽지 등록 완료! “$sampleNote” (+15 EXP · +20 P)"
+                    )
+                }
+            }
+
+            "7_driving_report" -> {
+                _uiState.update {
+                    it.copy(
+                        hideSimulatorDrawer = hideDrawer,
+                        screen = AppScreen.HOME,
+                        telemetry = it.telemetry.copy(gear = GearState.P, speedKmh = 0f, turnSignal = TurnSignalState.OFF, brakePressed = true),
+                        evaluation = DrivingEvaluationState(
+                            completedSafeBlocks = 8,
+                            completedSmoothWindows = 3,
+                            completedMannerTurns = 4
+                        ),
+                        parkingReport = ParkingReportSummary(
+                            todayDrivenKm = 12.4,
+                            todayMannerTurns = 4,
+                            todaySmoothWindows = 3,
+                            todayNotesLeft = 2,
+                            todayTodakReceived = 19
+                        ),
+                        showParkingReportModal = true,
+                        showRewardShopModal = false,
+                        showVoiceComposeDialog = false
+                    )
+                }
+            }
+
+            "8_pet_growth" -> {
+                showcaseJob = viewModelScope.launch {
+                    // Lv.1 아기 제로 (PUPPY)에서 시작
+                    val lv1Pet = initialPet().copy(
+                        level = 1,
+                        stageName = "아기 · 호기심 대장",
+                        currentExp = 115,
+                        maxExp = 140,
+                        currentSpeech = "오늘 주행으로 모은 경험치가 들어오고 있어요! (115 / 140 EXP)"
+                    )
+                    _uiState.update {
+                        it.copy(
+                            hideSimulatorDrawer = hideDrawer,
+                            screen = AppScreen.HOME,
+                            telemetry = it.telemetry.copy(gear = GearState.P, speedKmh = 0f, brakePressed = true),
+                            pet = lv1Pet,
+                            totalExp = 295,
+                            levelUpBanner = null,
+                            showParkingReportModal = false,
+                            showRewardShopModal = false,
+                            showVoiceComposeDialog = false
+                        )
+                    }
+                    delay(1800L)
+                    // 경험치 상승 (135 / 140)
+                    _uiState.update {
+                        it.copy(
+                            pet = lv1Pet.copy(
+                                currentExp = 135,
+                                currentSpeech = "매너운전 +20 EXP 획득! 거의 다 모았어요!"
+                            ),
+                            totalExp = 315
+                        )
+                    }
+                    delay(1400L)
+                    // Lv.2 성견 제로 (ADULT) 성장!
+                    val lv2Pet = initialPet().copy(
+                        level = 2,
+                        stageName = "새싹기 · 초보 매너러",
+                        currentExp = 45,
+                        maxExp = 180,
+                        currentSpeech = "짜잔! 주행 경험치가 쌓여 Lv.2 성견 제로로 성장했어요! 🎉"
+                    )
+                    _uiState.update {
+                        it.copy(
+                            pet = lv2Pet,
+                            totalExp = 365,
+                            levelUpBanner = "🎉 LEVEL UP! Lv.1 아기 제로 → Lv.2 성견 제로 성장 완료!"
+                        )
+                    }
+                }
+            }
+
+            "8a_before" -> {
+                val lv1Pet = initialPet().copy(
+                    level = 1,
+                    stageName = "아기 · 호기심 대장",
+                    currentExp = 125,
+                    maxExp = 140,
+                    currentSpeech = "조금만 더 매너운전 경험치를 모으면 Lv.2 성견 제로로 성장해요!"
+                )
+                _uiState.update {
+                    it.copy(
+                        hideSimulatorDrawer = hideDrawer,
+                        screen = AppScreen.HOME,
+                        telemetry = it.telemetry.copy(gear = GearState.P, speedKmh = 0f, brakePressed = true),
+                        pet = lv1Pet,
+                        totalExp = 305,
+                        levelUpBanner = null,
+                        showParkingReportModal = false,
+                        showRewardShopModal = false,
+                        showVoiceComposeDialog = false
+                    )
+                }
+            }
+
+            "8b_after" -> {
+                val lv2Pet = initialPet().copy(
+                    level = 2,
+                    stageName = "새싹기 · 초보 매너러",
+                    currentExp = 45,
+                    maxExp = 180,
+                    currentSpeech = "짜잔! 주행 경험치가 쌓여 Lv.2 성견 제로로 성장했어요! 🎉"
+                )
+                _uiState.update {
+                    it.copy(
+                        hideSimulatorDrawer = hideDrawer,
+                        screen = AppScreen.HOME,
+                        telemetry = it.telemetry.copy(gear = GearState.P, speedKmh = 0f, brakePressed = true),
+                        pet = lv2Pet,
+                        totalExp = 365,
+                        levelUpBanner = "🎉 LEVEL UP! Lv.1 아기 제로 → Lv.2 성견 제로 성장 완료!",
+                        showParkingReportModal = false,
+                        showRewardShopModal = false,
+                        showVoiceComposeDialog = false
+                    )
+                }
+            }
+
+            "9a_note_reaction" -> {
+                _uiState.update {
+                    it.copy(
+                        hideSimulatorDrawer = hideDrawer,
+                        screen = AppScreen.INBOX,
+                        initialInboxTabMine = true,
+                        telemetry = it.telemetry.copy(gear = GearState.P, speedKmh = 0f, brakePressed = true),
+                        notes = baseNotes,
+                        showParkingReportModal = false,
+                        showRewardShopModal = false,
+                        showVoiceComposeDialog = false
+                    )
+                }
+            }
+
+            "9b_reward_shop" -> {
+                _uiState.update {
+                    it.copy(
+                        hideSimulatorDrawer = hideDrawer,
+                        screen = AppScreen.HOME,
+                        telemetry = it.telemetry.copy(gear = GearState.P, speedKmh = 0f, brakePressed = true),
+                        warmthPoints = 1850,
+                        showRewardShopModal = true,
+                        showParkingReportModal = false,
+                        showVoiceComposeDialog = false
+                    )
+                }
+            }
+        }
+    }
+
     override fun onCleared() {
+        consoleClient.stop()
         sdkManager.releaseAll()
         super.onCleared()
     }
@@ -1265,9 +2125,9 @@ private fun initialVoiceNotes(): List<VoiceNote> = listOf(
         authorNickname = "성수동 모닝커피",
         authorPetName = "제로",
         authorPetLevel = 3,
-        rawText = "성수대교 진입 전 3차선에 작은 포트홀이 있어요. 미리 2차선으로 부드럽게 합류하세요! 오늘도 안전운전 화이팅!",
-        displayText = "성수대교 진입 전 3차선에 작은 포트홀이 있어요. 미리 2차선으로 부드럽게 합류하세요! 오늘도 안전운전 화이팅!",
-        category = NoteCategory.SAFETY_3H,
+        rawText = "여기만 지나면 금방 풀려요. 오늘도 힘내세요!",
+        displayText = "여기만 지나면 금방 풀려요. 오늘도 힘내세요!",
+        category = NoteCategory.CHEER_24H,
         moderationStatus = ModerationStatus.APPROVED,
         roadSegmentName = "강변북로 성수대교 동단",
         latitude = 37.5448,
@@ -1276,7 +2136,7 @@ private fun initialVoiceNotes(): List<VoiceNote> = listOf(
         distanceMeters = 180,
         headingDiffDeg = 3f, // 진행방향 85°와 3° 차이 → 재생 대상!
         createdAtLabel = "12분 전",
-        remainingLifeLabel = "2시간 48분 남음",
+        remainingLifeLabel = "23시간 48분 남음",
         todakCount = 19,
         listenerCount = 47,
         isCommuteBandOnly = true
@@ -1346,6 +2206,29 @@ private fun initialVoiceNotes(): List<VoiceNote> = listOf(
         isCommuteBandOnly = false
     ),
     VoiceNote(
+        id = "note_mine_rain",
+        authorNickname = "나",
+        authorPetName = "제로",
+        authorPetLevel = 2,
+        rawText = "비 오니까 다들 천천히 가요!",
+        displayText = "비 오니까 다들 천천히 가요!",
+        category = NoteCategory.SAFETY_3H,
+        moderationStatus = ModerationStatus.APPROVED,
+        roadSegmentName = "강변북로 성수대교 동단",
+        latitude = 37.5447,
+        longitude = 127.0458,
+        headingDeg = 85f,
+        distanceMeters = 0,
+        headingDiffDeg = 0f,
+        createdAtLabel = "방금 전",
+        remainingLifeLabel = "2시간 58분 남음 · 연장됨",
+        todakCount = 12,
+        listenerCount = 34,
+        isReactedByMe = true,
+        isListenedByMe = true,
+        isMine = true
+    ),
+    VoiceNote(
         id = "note_mine_1",
         authorNickname = "나",
         authorPetName = "제로",
@@ -1354,16 +2237,16 @@ private fun initialVoiceNotes(): List<VoiceNote> = listOf(
         displayText = "터널 나가면 노면이 젖어 있어요. 천천히 가세요.",
         category = NoteCategory.SAFETY_3H,
         moderationStatus = ModerationStatus.APPROVED,
-        roadSegmentName = "강변북로 성수대교 동단",
+        roadSegmentName = "강변북로 영동대교 북단",
         latitude = 37.5446,
         longitude = 127.0452,
         headingDeg = 85f,
         distanceMeters = 0,
         headingDiffDeg = 0f,
         createdAtLabel = "1시간 전",
-        remainingLifeLabel = "1시간 52분 남음",
-        todakCount = 3,
-        listenerCount = 8,
+        remainingLifeLabel = "1시간 52분 남음 · 연장됨",
+        todakCount = 7,
+        listenerCount = 19,
         isReactedByMe = true,
         isListenedByMe = true,
         isMine = true

@@ -19,6 +19,8 @@ import com.example.hyundai.nav.TurnIcon
 import com.example.hyundai.ui.drive.DriveScreen
 import com.example.hyundai.ui.drive.TurnArrow
 import com.example.hyundai.ui.parked.ParkedScreen
+import com.example.hyundai.ui.pet.PetModel
+import com.example.hyundai.ui.pet.PetPose
 import com.example.hyundai.ui.theme.TodakColors
 import com.example.hyundai.viewmodel.AppUiState
 
@@ -33,6 +35,24 @@ fun TurnArrowsPreview() {
             TurnIcon.STRAIGHT, TurnIcon.RIGHT, TurnIcon.LEFT, TurnIcon.SLIGHT_RIGHT,
             TurnIcon.SHARP_LEFT, TurnIcon.UTURN, TurnIcon.ROUNDABOUT, TurnIcon.ARRIVE
         ).forEach { TurnArrow(it, Modifier.size(72.dp)) }
+    }
+}
+
+@Preview(widthDp = 960, heightDp = 140, backgroundColor = 0xFF0B1830, showBackground = true)
+@Composable
+fun PetGridPosesPreview() {
+    Row(
+        modifier = Modifier.padding(12.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        PetPose.entries.forEach { pose ->
+            PetModel(
+                accent = TodakColors.Route,
+                modifier = Modifier.size(92.dp),
+                spin = false,
+                pose = pose
+            )
+        }
     }
 }
 
@@ -65,9 +85,16 @@ fun DriveScreenPreview() {
 @Preview(widthDp = 1280, heightDp = 560, showBackground = true)
 @Composable
 fun ParkedScreenPreview() {
+    val base = AppUiState()
+    val parkedState = base.copy(
+        telemetry = base.telemetry.copy(
+            gear = com.example.hyundai.model.GearState.P,
+            speedKmh = 0f
+        )
+    )
     Box(modifier = Modifier.fillMaxSize().background(TodakColors.Background)) {
         ParkedScreen(
-            state = AppUiState(),
+            state = parkedState,
             onOpenRewardShop = {},
             onOpenParkingReport = {},
             onOpenInbox = {},

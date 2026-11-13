@@ -14,6 +14,9 @@ object NavTheme {
     val TextSecondary = Color(0xFFCBD5E1)
     val Dot = Color(0xFF475569)
 
+    /** 경고등·배터리 부족 알림 테두리. 쪽지 구간과 같은 앰버 계열이다. */
+    val Alert = Color(0xFFF59E0B)
+
     // 경로와 차량 (밤 지도)
     const val ROUTE = "#38bdf8"
     const val ROUTE_CORE = "#e0f7ff"
