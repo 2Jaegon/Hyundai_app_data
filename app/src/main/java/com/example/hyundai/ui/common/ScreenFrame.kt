@@ -70,9 +70,9 @@ fun ScreenFrame(
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 BackChevron(modifier = Modifier.size(18.dp))
-                Text("뒤로", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                Text("뒤로", color = TodakColors.RouteDeep, fontSize = 18.sp, fontWeight = FontWeight.Bold)
             }
-            Text(title, color = Color.White, fontSize = 26.sp, fontWeight = FontWeight.ExtraBold)
+            Text(title, color = TodakColors.Text, fontSize = 26.sp, fontWeight = FontWeight.ExtraBold)
         }
         Box(modifier = Modifier.fillMaxWidth().weight(1f)) { content() }
     }
@@ -87,7 +87,7 @@ private fun BackChevron(modifier: Modifier = Modifier) {
             lineTo(size.width * 0.7f, size.height * 0.9f)
         }
         drawPath(
-            path, Color.White,
+            path, TodakColors.RouteDeep,
             style = Stroke(width = size.width * 0.16f, cap = StrokeCap.Round, join = StrokeJoin.Round)
         )
     }
@@ -109,9 +109,14 @@ fun TodakButton(
     enabled: Boolean = true
 ) {
     val background = when {
-        !enabled -> TodakColors.Edge
+        !enabled -> TodakColors.Disabled
         tone == ButtonTone.Primary -> TodakColors.RouteDeep
         else -> TodakColors.Neutral
+    }
+    val content = when {
+        !enabled -> TodakColors.TextDim
+        tone == ButtonTone.Primary -> TodakColors.OnColor
+        else -> TodakColors.RouteDeep
     }
     Box(
         modifier = modifier
@@ -124,7 +129,7 @@ fun TodakButton(
     ) {
         Text(
             text,
-            color = if (enabled) Color.White else TodakColors.TextDim,
+            color = content,
             fontSize = 18.sp,
             fontWeight = FontWeight.Bold
         )

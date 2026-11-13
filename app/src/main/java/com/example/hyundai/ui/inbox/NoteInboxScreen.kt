@@ -107,13 +107,13 @@ fun NoteInboxScreen(
                         Box(
                             modifier = Modifier
                                 .clip(RoundedCornerShape(14.dp))
-                                .background(Color(0x28FF5E84))
-                                .border(1.dp, Color(0xFFFF6B8B), RoundedCornerShape(14.dp))
+                                .background(TodakColors.ApricotSoft)
+                                .border(1.dp, TodakColors.Apricot, RoundedCornerShape(14.dp))
                                 .padding(horizontal = 16.dp, vertical = 10.dp)
                         ) {
                             Text(
                                 text = "총 받은 하트 ♥ ${totalHearts}개 · 누적 획득 보상 +${totalExpEarned} EXP · +${totalPtsEarned} P",
-                                color = Color.White,
+                                color = TodakColors.Text,
                                 fontSize = 16.sp,
                                 fontWeight = FontWeight.ExtraBold
                             )
@@ -191,7 +191,7 @@ private fun PetCorner(state: AppUiState, isMineTab: Boolean, modifier: Modifier 
                 isMineTab -> "${pet.name} Lv.${pet.level} · 하트 반응에 기뻐해요!"
                 else -> "${pet.name} Lv.${pet.level}"
             },
-            color = Color.White,
+            color = TodakColors.Text,
             fontSize = 18.sp,
             fontWeight = FontWeight.ExtraBold,
             textAlign = TextAlign.Center
@@ -238,7 +238,7 @@ private fun EmptyInbox(isReceived: Boolean, modifier: Modifier = Modifier) {
         ) {
             Text(
                 if (isReceived) "받은 쪽지가 없어요" else "남긴 쪽지가 없어요",
-                color = Color.White,
+                color = TodakColors.Text,
                 fontSize = 22.sp,
                 fontWeight = FontWeight.Bold
             )
@@ -288,7 +288,7 @@ private fun InboxCard(
                 )
                 Text(
                     "${note.authorPetName} Lv.${note.authorPetLevel}",
-                    color = Color.White,
+                    color = TodakColors.Text,
                     fontSize = 18.sp,
                     fontWeight = FontWeight.Bold
                 )
@@ -299,7 +299,7 @@ private fun InboxCard(
 
         Text(
             "“${note.displayText}”",
-            color = Color.White,
+            color = TodakColors.Text,
             fontSize = 19.sp,
             lineHeight = 27.sp,
             maxLines = 3,
@@ -329,7 +329,7 @@ private fun InboxCard(
                 )
                 if (note.isMine) {
                     InfoPill("들은 운전자 ${note.listenerCount}명", TodakColors.TextSecondary)
-                    InfoPill("♥ 받은 하트 ${note.todakCount}개", Color(0xFFFF6B8B))
+                    InfoPill("♥ 받은 하트 ${note.todakCount}개", TodakColors.ApricotDeep)
                     InfoPill("획득 보상 +${earnedExp} EXP · +${earnedPoints} P", TodakColors.Good)
                 } else {
                     ActionButton(

@@ -23,6 +23,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -36,6 +37,7 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -59,17 +61,21 @@ private fun ModalFrame(
     onDismiss: () -> Unit,
     content: @Composable () -> Unit
 ) {
+    // 다이얼로그는 따로 창을 띄우면서 밀도를 기기 값으로 되돌린다. 차량 화면 배율(OnGilScale)을 다시 넣어 준다.
+    val carDensity = LocalDensity.current
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false)
     ) {
-        Surface(
-            modifier = modifier
-                .fillMaxWidth(widthFraction)
-                .clip(RoundedCornerShape(26.dp))
-                .border(1.5.dp, accent.copy(alpha = 0.6f), RoundedCornerShape(26.dp)),
-            color = TodakColors.Background
-        ) { content() }
+        CompositionLocalProvider(LocalDensity provides carDensity) {
+            Surface(
+                modifier = modifier
+                    .fillMaxWidth(widthFraction)
+                    .clip(RoundedCornerShape(28.dp))
+                    .border(2.dp, accent.copy(alpha = 0.5f), RoundedCornerShape(28.dp)),
+                color = TodakColors.Background
+            ) { content() }
+        }
     }
 }
 
@@ -99,7 +105,7 @@ fun VoiceNoteComposeModal(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    Text("음성 쪽지 작성", color = Color.White, fontSize = 26.sp, fontWeight = FontWeight.ExtraBold)
+                    Text("음성 쪽지 작성", color = TodakColors.Text, fontSize = 26.sp, fontWeight = FontWeight.ExtraBold)
                     Box(
                         modifier = Modifier
                             .clip(RoundedCornerShape(10.dp))
@@ -189,7 +195,7 @@ fun VoiceNoteComposeModal(
                         ) {
                             Text(
                                 if (state.isRecordingStt) "음성 듣는 중" else "다시 말하기",
-                                color = Color.White,
+                                color = TodakColors.OnColor,
                                 fontSize = 17.sp,
                                 fontWeight = FontWeight.Bold
                             )
@@ -201,7 +207,7 @@ fun VoiceNoteComposeModal(
                         } else {
                             "“비 오니까 다들 천천히 가요!”"
                         },
-                        color = Color.White,
+                        color = TodakColors.Text,
                         fontSize = 23.sp,
                         lineHeight = 31.sp,
                         fontWeight = FontWeight.ExtraBold
@@ -235,7 +241,7 @@ fun VoiceNoteComposeModal(
                             Text("AI 다정한 표현 순화 완료", color = tone, fontSize = 18.sp, fontWeight = FontWeight.Bold)
                             Text(
                                 "“${mod.cleanedText}”",
-                                color = Color.White,
+                                color = TodakColors.Text,
                                 fontSize = 20.sp,
                                 lineHeight = 28.sp
                             )
@@ -283,7 +289,12 @@ fun VoiceNoteComposeModal(
                             disabledContainerColor = TodakColors.Disabled
                         )
                     ) {
-                        Text("쪽지 등록하기", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                        Text(
+                            "쪽지 등록하기",
+                            color = if (canPublish) TodakColors.OnColor else TodakColors.TextDim,
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Bold
+                        )
                     }
                 }
             }
@@ -333,7 +344,7 @@ fun ParkingReportAndTireTrackModal(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
-                    Text("주행 종료 리포트", color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.ExtraBold)
+                    Text("주행 종료 리포트", color = TodakColors.Text, fontSize = 28.sp, fontWeight = FontWeight.ExtraBold)
                     Box(
                         modifier = Modifier
                             .clip(RoundedCornerShape(10.dp))
@@ -353,7 +364,7 @@ fun ParkingReportAndTireTrackModal(
                     onClick = onDismiss,
                     colors = ButtonDefaults.buttonColors(containerColor = TodakColors.Neutral)
                 ) {
-                    Text("닫기", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                    Text("닫기", color = TodakColors.RouteDeep, fontSize = 18.sp, fontWeight = FontWeight.Bold)
                 }
             }
 
@@ -375,7 +386,7 @@ fun ParkingReportAndTireTrackModal(
                     Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
                         Text(
                             text = "Safe · Smooth · Manner 주행 기록",
-                            color = Color.White,
+                            color = TodakColors.Text,
                             fontSize = 22.sp,
                             fontWeight = FontWeight.ExtraBold
                         )
@@ -446,7 +457,7 @@ fun ParkingReportAndTireTrackModal(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text("오늘의 바퀴자취 & 온기 요약", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.ExtraBold)
+                        Text("오늘의 바퀴자취 & 온기 요약", color = TodakColors.Text, fontSize = 22.sp, fontWeight = FontWeight.ExtraBold)
                         Text(
                             String.format(Locale.KOREA, "총 %.1fkm 주행", report.todayDrivenKm),
                             color = TodakColors.Route,
@@ -488,7 +499,7 @@ fun ParkingReportAndTireTrackModal(
                                     verticalArrangement = Arrangement.spacedBy(2.dp)
                                 ) {
                                     Text(node.timeLabel, color = TodakColors.Good, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                                    Text(node.segmentName, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                                    Text(node.segmentName, color = TodakColors.Text, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
                                     Text(
                                         node.mannerGrade,
                                         color = TodakColors.Warm,
@@ -526,7 +537,7 @@ private fun ReportDriveRow(
             modifier = Modifier.weight(1f),
             verticalArrangement = Arrangement.spacedBy(4.dp)
         ) {
-            Text(title, color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.ExtraBold)
+            Text(title, color = TodakColors.Text, fontSize = 18.sp, fontWeight = FontWeight.ExtraBold)
             Text(subtitle, color = TodakColors.TextSecondary, fontSize = 14.sp)
         }
         Text(
@@ -595,7 +606,7 @@ fun HyundaiRewardShopModal(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    Text("온길 포인트 & 차량 관리 혜택", color = Color.White, fontSize = 26.sp, fontWeight = FontWeight.ExtraBold)
+                    Text("온길 포인트 & 차량 관리 혜택", color = TodakColors.Text, fontSize = 26.sp, fontWeight = FontWeight.ExtraBold)
                     Box(
                         modifier = Modifier
                             .clip(RoundedCornerShape(10.dp))
@@ -656,7 +667,7 @@ fun HyundaiRewardShopModal(
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
-                                Text(item.title, color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                                Text(item.title, color = TodakColors.Text, fontSize = 20.sp, fontWeight = FontWeight.Bold)
                                 Box(
                                     modifier = Modifier
                                         .clip(RoundedCornerShape(6.dp))
@@ -680,7 +691,7 @@ fun HyundaiRewardShopModal(
                         ) {
                             Text(
                                 "${won(item.pointCost)}P 교환 예시",
-                                color = Color.White,
+                                color = if (affordable) TodakColors.OnColor else TodakColors.TextDim,
                                 fontSize = 17.sp,
                                 fontWeight = FontWeight.Bold
                             )
@@ -694,7 +705,7 @@ fun HyundaiRewardShopModal(
                     onClick = onDismiss,
                     colors = ButtonDefaults.buttonColors(containerColor = TodakColors.Neutral)
                 ) {
-                    Text("닫기", color = Color.White, fontSize = 18.sp)
+                    Text("닫기", color = TodakColors.RouteDeep, fontSize = 18.sp, fontWeight = FontWeight.Bold)
                 }
             }
         }

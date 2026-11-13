@@ -122,7 +122,7 @@ private fun SettingRow(
         verticalAlignment = Alignment.CenterVertically
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(title, color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.ExtraBold)
+            Text(title, color = TodakColors.Text, fontSize = 22.sp, fontWeight = FontWeight.ExtraBold)
             Text(hint, color = TodakColors.TextDim, fontSize = 16.sp)
         }
         control()

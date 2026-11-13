@@ -23,12 +23,17 @@ import androidx.core.graphics.toColorInt
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import android.os.SystemClock
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Path
 import com.example.hyundai.nav.GeoMath
 import com.example.hyundai.nav.GeoPoint
 import com.example.hyundai.nav.NavUiState
-import com.example.hyundai.nav.NoteRouteZone
+import com.example.hyundai.nav.RouteGradient
+import com.example.hyundai.nav.RouteStop
 import com.example.hyundai.nav.RouteTrack
-import com.example.hyundai.nav.RouteWindow
+import com.example.hyundai.nav.RouteWindowSwitcher
+import com.example.hyundai.ui.theme.TodakColors
 import kotlinx.coroutines.flow.collectLatest
 import org.json.JSONObject
 import org.maplibre.android.MapLibre
@@ -41,12 +46,9 @@ import org.maplibre.android.maps.Style
 import org.maplibre.android.style.expressions.Expression
 import org.maplibre.android.style.layers.LineLayer
 import org.maplibre.android.style.layers.Property
-import org.maplibre.android.style.layers.PropertyFactory.lineBlur
 import org.maplibre.android.style.layers.PropertyFactory.lineCap
-import org.maplibre.android.style.layers.PropertyFactory.lineColor
 import org.maplibre.android.style.layers.PropertyFactory.lineGradient
 import org.maplibre.android.style.layers.PropertyFactory.lineJoin
-import org.maplibre.android.style.layers.PropertyFactory.lineOpacity
 import org.maplibre.android.style.layers.PropertyFactory.lineWidth
 import org.maplibre.android.style.sources.GeoJsonOptions
 import org.maplibre.android.style.sources.GeoJsonSource
@@ -54,18 +56,14 @@ import org.maplibre.geojson.Feature
 import org.maplibre.geojson.FeatureCollection
 import org.maplibre.geojson.LineString
 import org.maplibre.geojson.Point
-import kotlin.math.max
-import kotlin.math.min
 
-private const val ROUTE_SRC = "todak-route-src"
-private const val GLOW_LAYER = "todak-route-glow"
-private const val LINE_LAYER = "todak-route-line"
-private const val CORE_LAYER = "todak-route-core"
+/** 경로선은 두 칸(0, 1)에 번갈아 올린다([RouteWindowSwitcher]). 칸마다 소스 하나, 테두리와 속 레이어 둘. */
+private fun routeSource(slot: Int) = "todak-route-src-$slot"
+private fun casingLayer(slot: Int) = "todak-route-casing-$slot"
+private fun fillLayer(slot: Int) = "todak-route-fill-$slot"
 
-private const val NOTE_ZONE_SRC = "todak-note-zone-src"
-private const val NOTE_ZONE_GLOW_LAYER = "todak-note-zone-glow"
-private const val NOTE_ZONE_LINE_LAYER = "todak-note-zone-line"
-private const val NOTE_ZONE_CORE_LAYER = "todak-note-zone-core"
+/** 차 뒤에서 선이 서서히 옅어지는 길이(m). 차 표시 아래에 대부분 가려진다. */
+private const val ROUTE_TAIL_M = 12.0
 
 /** 3D 시점 기울기. 32°로 완만하게 고정해 주변 건물이나 지형에 의해 시야가 들썩이지 않게 한다. */
 private const val CAMERA_TILT_3D = 32.0
@@ -103,12 +101,37 @@ private fun zoomWidth(at17: Float, at19: Float): Expression =
         Expression.stop(19, at19)
     )
 
-/** 선의 앞쪽 [fraction]까지는 투명, 그 뒤는 [color]로 칠한다. 지나간 길만 선이 사라지게 하는 방법이다. */
-private fun trimGradient(fraction: Float, color: String): Expression =
-    Expression.step(
+/** [RouteGradient]가 정한 점들로 선 색을 칠한다. 점 사이는 이어서 섞어, 지워지는 끝이 칸 단위로 튀지 않는다. */
+private fun routeGradient(stops: List<RouteStop>, base: String, note: String): Expression {
+    val baseColor = base.toColorInt()
+    val noteColor = note.toColorInt()
+    if (stops.size < 2) return transparentGradient()
+    return Expression.interpolate(
+        Expression.linear(),
         Expression.lineProgress(),
-        Expression.rgba(0, 0, 0, 0),
-        Expression.stop(fraction, Expression.color(color.toColorInt()))
+        *stops.map { s ->
+            val c = if (s.onNote) noteColor else baseColor
+            Expression.stop(
+                s.position,
+                Expression.rgba(
+                    android.graphics.Color.red(c), android.graphics.Color.green(c), android.graphics.Color.blue(c),
+                    s.alpha
+                )
+            )
+        }.toTypedArray()
+    )
+}
+
+/**
+ * 숨긴 칸의 선. 레이어를 끄지 않고 투명하게만 칠해, 지도 엔진이 그 칸의 선 모양을 미리 처리해 두게 한다
+ * (꺼 둔 레이어의 소스는 처리하지 않을 수 있다).
+ */
+private fun transparentGradient(): Expression =
+    Expression.interpolate(
+        Expression.linear(),
+        Expression.lineProgress(),
+        Expression.stop(0f, Expression.rgba(0, 0, 0, 0f)),
+        Expression.stop(1f, Expression.rgba(0, 0, 0, 0f))
     )
 
 /**
@@ -194,7 +217,7 @@ fun NavMap(
         styleReady = false
         val json = if (reliefFailed) withoutRelief(styleJson) else styleJson
         m.setStyle(Style.Builder().fromJson(json)) { style ->
-            installRouteLayers(style, isDay)
+            installRouteLayers(style)
             styleReady = true
         }
     }
@@ -215,28 +238,39 @@ fun NavMap(
         val style = m.style ?: return@LaunchedEffect
 
         var windowTrack: RouteTrack? = null
-        var window = RouteWindow(0.0, 1.0)
+        val switcher = RouteWindowSwitcher()
+        var shownSlot = -1
         // MapView 레이아웃 크기가 측정된 뒤 한 번 고정한 상단 패딩(px)을 계속 재사용해 시야 흔들림을 막는다.
         var fixedTopPaddingPx = 0.0
+        val casingColor = NavTheme.routeCasing(isDay)
+        val noteCasingColor = NavTheme.noteCasing(isDay)
 
         fun updateRoute(progressM: Double) {
             val track = latestNav.track ?: return
-            if (track !== windowTrack || window.needsRebuild(progressM)) {
+            if (track !== windowTrack) {
                 windowTrack = track
-                window = RouteWindow.at(progressM, track.totalM)
-                // 구간은 몇 백 m마다 한 번만 올린다. 매초 올리면 지도가 그때마다 선을 다시 만들어 조각이 사라진다.
-                style.getSourceAs<GeoJsonSource>(ROUTE_SRC)
-                    ?.setGeoJson(routeGeoJson(track.window(window.startM, window.endM)))
+                switcher.reset()
             }
-            val fraction = window.fraction(progressM)
-            val route = lineGradient(trimGradient(fraction, NavTheme.route(isDay)))
-            style.getLayerAs<LineLayer>(GLOW_LAYER)?.setProperties(route)
-            style.getLayerAs<LineLayer>(LINE_LAYER)?.setProperties(route)
-            style.getLayerAs<LineLayer>(CORE_LAYER)?.setProperties(lineGradient(trimGradient(fraction, NavTheme.routeCore(isDay))))
-
-            // 차 앞쪽에 놓인 쪽지 구간들만 잘라 따뜻한 앰버 골드 색상으로 경로 위에 표시한다.
-            style.getSourceAs<GeoJsonSource>(NOTE_ZONE_SRC)
-                ?.setGeoJson(noteZonesGeoJson(track, latestNav.noteZones, progressM, window.endM))
+            // 구간은 몇 백 m마다 한 번만, 그것도 숨긴 칸에 미리 올린다. 매초 올리면 지도가 선을 다시 만들며 조각이 사라진다.
+            for (action in switcher.update(progressM, track.totalM, SystemClock.uptimeMillis())) {
+                when (action) {
+                    is RouteWindowSwitcher.Action.Upload -> style.getSourceAs<GeoJsonSource>(routeSource(action.slot))
+                        ?.setGeoJson(routeGeoJson(track.window(action.window.startM, action.window.endM)))
+                    is RouteWindowSwitcher.Action.Show -> if (shownSlot != action.slot) {
+                        // 바뀌는 순간 두 칸의 색을 같은 프레임에 바꾼다. 옛 칸은 투명하게만 둔다.
+                        val hidden = lineGradient(transparentGradient())
+                        style.getLayerAs<LineLayer>(casingLayer(1 - action.slot))?.setProperties(hidden)
+                        style.getLayerAs<LineLayer>(fillLayer(1 - action.slot))?.setProperties(hidden)
+                        shownSlot = action.slot
+                    }
+                }
+            }
+            val window = switcher.active ?: return
+            val stops = RouteGradient.stops(window, progressM, latestNav.noteZones, ROUTE_TAIL_M)
+            style.getLayerAs<LineLayer>(casingLayer(shownSlot))
+                ?.setProperties(lineGradient(routeGradient(stops, casingColor, noteCasingColor)))
+            style.getLayerAs<LineLayer>(fillLayer(shownSlot))
+                ?.setProperties(lineGradient(routeGradient(stops, NavTheme.ROUTE_FILL, NavTheme.NOTE_FILL)))
         }
 
         fun apply(pose: CameraPose) {
@@ -291,23 +325,33 @@ fun NavMap(
 
     Box(modifier) {
         AndroidView(factory = { mapView }, modifier = Modifier.fillMaxSize())
-        CarMarker(isDay)
+        CarMarker()
     }
 }
 
-/** 카메라 가운데(위쪽 여백을 뺀 영역의 가운데)에 고정된 차량 표시. */
+/** 카메라 가운데(위쪽 여백을 뺀 영역의 가운데)에 고정된 차량 표시. 흰 테두리의 하늘색 원 안에 진행 방향 화살표. */
 @Composable
-private fun CarMarker(isDay: Boolean) {
-    val accent = Color(NavTheme.route(isDay).toColorInt())
-    val ring = Color(NavTheme.carRing(isDay).toColorInt())
+private fun CarMarker() {
+    val sky = TodakColors.Sky
+    val ink = TodakColors.Ink
     Canvas(Modifier.fillMaxSize()) {
-        val center = androidx.compose.ui.geometry.Offset(
+        val center = Offset(
             size.width / 2f,
             size.height * (CAMERA_TOP_PADDING_FRACTION + (1 - CAMERA_TOP_PADDING_FRACTION) / 2).toFloat()
         )
-        drawCircle(accent.copy(alpha = 0.28f), radius = 26.dp.toPx(), center = center)
-        drawCircle(ring, radius = 11.dp.toPx(), center = center)
-        drawCircle(Color.White, radius = 7.dp.toPx(), center = center)
+        val r = 17.dp.toPx()
+        drawCircle(ink.copy(alpha = 0.16f), radius = r + 3.dp.toPx(), center = center + Offset(0f, 2.dp.toPx()))
+        drawCircle(Color.White, radius = r, center = center)
+        drawCircle(sky, radius = r - 4.dp.toPx(), center = center)
+        val a = r * 0.55f
+        val arrow = Path().apply {
+            moveTo(center.x, center.y - a)
+            lineTo(center.x + a * 0.78f, center.y + a * 0.72f)
+            lineTo(center.x, center.y + a * 0.30f)
+            lineTo(center.x - a * 0.78f, center.y + a * 0.72f)
+            close()
+        }
+        drawPath(arrow, Color.White)
     }
 }
 
@@ -318,92 +362,34 @@ private fun routeGeoJson(pts: List<GeoPoint>): FeatureCollection {
 }
 
 /**
- * 경로 위에서 쪽지가 있는 구간([zones]) 중 아직 지나가지 않은 앞쪽 구간만 잘라 GeoJSON FeatureCollection으로 만든다.
+ * 경로선 레이어. 빛 번짐(blur) 없이, 진한 하늘색 테두리 위에 하늘색으로 속을 꽉 채운 선 하나다.
+ * 쪽지 구간은 같은 선 위에서 살구색으로 바뀐다([RouteGradient]).
  */
-internal fun noteZonesGeoJson(
-    track: RouteTrack,
-    zones: List<NoteRouteZone>,
-    progressM: Double,
-    windowEndM: Double
-): FeatureCollection {
-    if (zones.isEmpty()) return FeatureCollection.fromFeatures(emptyList<Feature>())
-    val features = ArrayList<Feature>(zones.size)
-    for (zone in zones) {
-        val segStart = max(zone.startM, progressM)
-        val segEnd = min(zone.endM, windowEndM)
-        if (segEnd - segStart < 8.0) continue
-        val pts = track.window(segStart, segEnd)
-        if (pts.size >= 2) {
-            val line = LineString.fromLngLats(pts.map { Point.fromLngLat(it.lng, it.lat) })
-            features.add(Feature.fromGeometry(line))
-        }
+private fun installRouteLayers(style: Style) {
+    for (slot in 0..1) {
+        // 선 그라데이션은 line metrics가 켜진 소스에서만 동작한다. 타일 경계에서 굵은 선이 잘리지 않게 여유(buffer)도 준다.
+        style.addSource(
+            GeoJsonSource(
+                routeSource(slot),
+                FeatureCollection.fromFeatures(emptyList<Feature>()),
+                GeoJsonOptions().withLineMetrics(true).withBuffer(256)
+            )
+        )
+        style.addLayer(
+            LineLayer(casingLayer(slot), routeSource(slot)).withProperties(
+                lineGradient(transparentGradient()),
+                lineWidth(zoomWidth(20f, 42f)),
+                lineCap(Property.LINE_CAP_ROUND), lineJoin(Property.LINE_JOIN_ROUND)
+            )
+        )
+        style.addLayer(
+            LineLayer(fillLayer(slot), routeSource(slot)).withProperties(
+                lineGradient(transparentGradient()),
+                lineWidth(zoomWidth(15f, 32f)),
+                lineCap(Property.LINE_CAP_ROUND), lineJoin(Property.LINE_JOIN_ROUND)
+            )
+        )
     }
-    return FeatureCollection.fromFeatures(features)
-}
-
-private fun installRouteLayers(style: Style, isDay: Boolean) {
-    // 선 그라데이션은 line metrics가 켜진 소스에서만 동작한다. 타일 경계에서 굵은 선이 잘리지 않게 여유(buffer)도 준다.
-    style.addSource(
-        GeoJsonSource(
-            ROUTE_SRC,
-            FeatureCollection.fromFeatures(emptyList<Feature>()),
-            GeoJsonOptions().withLineMetrics(true).withBuffer(256)
-        )
-    )
-    style.addSource(
-        GeoJsonSource(
-            NOTE_ZONE_SRC,
-            FeatureCollection.fromFeatures(emptyList<Feature>()),
-            GeoJsonOptions().withBuffer(256)
-        )
-    )
-
-    style.addLayer(
-        LineLayer(GLOW_LAYER, ROUTE_SRC).withProperties(
-            lineGradient(trimGradient(0f, NavTheme.route(isDay))),
-            lineOpacity(0.30f), lineWidth(zoomWidth(34f, 72f)), lineBlur(10f),
-            lineCap(Property.LINE_CAP_ROUND), lineJoin(Property.LINE_JOIN_ROUND)
-        )
-    )
-    style.addLayer(
-        LineLayer(LINE_LAYER, ROUTE_SRC).withProperties(
-            lineGradient(trimGradient(0f, NavTheme.route(isDay))),
-            lineWidth(zoomWidth(16f, 34f)),
-            lineCap(Property.LINE_CAP_ROUND), lineJoin(Property.LINE_JOIN_ROUND)
-        )
-    )
-    style.addLayer(
-        LineLayer(CORE_LAYER, ROUTE_SRC).withProperties(
-            lineGradient(trimGradient(0f, NavTheme.routeCore(isDay))),
-            lineWidth(zoomWidth(5f, 11f)),
-            lineCap(Property.LINE_CAP_ROUND), lineJoin(Property.LINE_JOIN_ROUND)
-        )
-    )
-
-    // 도로 위에 쪽지가 있는 구간을 다른 색상(따뜻한 앰버 골드)으로 강조하는 레이어
-    val zoneColor = NavTheme.noteZone(isDay).toColorInt()
-    val zoneCoreColor = NavTheme.NOTE_ZONE_CORE.toColorInt()
-    style.addLayer(
-        LineLayer(NOTE_ZONE_GLOW_LAYER, NOTE_ZONE_SRC).withProperties(
-            lineColor(zoneColor),
-            lineOpacity(0.42f), lineWidth(zoomWidth(38f, 80f)), lineBlur(12f),
-            lineCap(Property.LINE_CAP_ROUND), lineJoin(Property.LINE_JOIN_ROUND)
-        )
-    )
-    style.addLayer(
-        LineLayer(NOTE_ZONE_LINE_LAYER, NOTE_ZONE_SRC).withProperties(
-            lineColor(zoneColor),
-            lineWidth(zoomWidth(18f, 38f)),
-            lineCap(Property.LINE_CAP_ROUND), lineJoin(Property.LINE_JOIN_ROUND)
-        )
-    )
-    style.addLayer(
-        LineLayer(NOTE_ZONE_CORE_LAYER, NOTE_ZONE_SRC).withProperties(
-            lineColor(zoneCoreColor),
-            lineWidth(zoomWidth(6f, 13f)),
-            lineCap(Property.LINE_CAP_ROUND), lineJoin(Property.LINE_JOIN_ROUND)
-        )
-    )
 }
 
 private fun withoutRelief(styleJson: String): String {

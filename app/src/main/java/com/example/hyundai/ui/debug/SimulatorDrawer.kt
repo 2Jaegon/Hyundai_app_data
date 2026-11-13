@@ -24,6 +24,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -154,6 +155,12 @@ private fun SimButton(label: String, bg: Color, onClick: () -> Unit) {
             .clickable(onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 11.dp)
     ) {
-        Text(label, color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+        // 옅은 바탕(보조 버튼)에는 하늘색 글자, 진한 바탕에는 흰 글자.
+        Text(
+            label,
+            color = if (bg.luminance() > 0.6f) TodakColors.RouteDeep else Color.White,
+            fontSize = 16.sp,
+            fontWeight = FontWeight.Bold
+        )
     }
 }

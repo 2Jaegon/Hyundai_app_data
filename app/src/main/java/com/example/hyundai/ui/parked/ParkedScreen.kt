@@ -133,7 +133,7 @@ private fun ParkedHeader(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Text("온길", color = Color.White, fontSize = 26.sp, fontWeight = FontWeight.ExtraBold)
+            Text("온길", color = TodakColors.Text, fontSize = 26.sp, fontWeight = FontWeight.ExtraBold)
             Box(
                 modifier = Modifier
                     .clip(RoundedCornerShape(10.dp))
@@ -187,7 +187,8 @@ private fun Chip(text: String, color: Color, onClick: (() -> Unit)?) {
 @Composable
 private fun PetPane(modifier: Modifier, state: AppUiState) {
     val pet = state.activePet
-    val accent = Color(pet.badgeColorHex)
+    // 펫은 포인트 색(살구)으로 통일한다.
+    val accent = TodakColors.ApricotDeep
     val expRatio = (pet.currentExp.toFloat() / pet.maxExp.toFloat()).coerceIn(0f, 1f)
     val isLevelingUp = state.levelUpBanner != null
     var previewPoseIndex by remember { mutableStateOf(-1) }
@@ -218,7 +219,7 @@ private fun PetPane(modifier: Modifier, state: AppUiState) {
                 ) {
                     Text(
                         text = state.levelUpBanner,
-                        color = Color.White,
+                        color = TodakColors.Text,
                         fontSize = 16.sp,
                         fontWeight = FontWeight.ExtraBold,
                         textAlign = TextAlign.Center
@@ -265,7 +266,7 @@ private fun PetPane(modifier: Modifier, state: AppUiState) {
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                Text(pet.name, color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.ExtraBold)
+                Text(pet.name, color = TodakColors.Text, fontSize = 24.sp, fontWeight = FontWeight.ExtraBold)
                 Box(
                     modifier = Modifier
                         .clip(RoundedCornerShape(10.dp))
@@ -333,7 +334,7 @@ private fun PetPane(modifier: Modifier, state: AppUiState) {
             ) {
                 Text(
                     text = pet.currentSpeech,
-                    color = Color.White,
+                    color = TodakColors.Text,
                     fontSize = 15.sp,
                     lineHeight = 21.sp,
                     maxLines = 2,
@@ -355,7 +356,7 @@ private fun DrivingPane(modifier: Modifier, state: AppUiState) {
             modifier = Modifier.fillMaxSize(),
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            Text("오늘의 운전", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.ExtraBold)
+            Text("오늘의 운전", color = TodakColors.Text, fontSize = 22.sp, fontWeight = FontWeight.ExtraBold)
 
             ScoreRow(
                 title = "Safe Drive · 안전 주행",
@@ -393,7 +394,7 @@ private fun DrivingPane(modifier: Modifier, state: AppUiState) {
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("Manner Drive · 매너 운전", color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Bold)
+                    Text("Manner Drive · 매너 운전", color = TodakColors.Text, fontSize = 17.sp, fontWeight = FontWeight.Bold)
                     Text("${eval.completedMannerTurns}회", color = TodakColors.Good, fontSize = 18.sp, fontWeight = FontWeight.ExtraBold)
                 }
                 if (note != null) {
@@ -419,7 +420,7 @@ private fun ScoreRow(title: String, count: Int, progress: Float, detail: String,
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(title, color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Bold)
+            Text(title, color = TodakColors.Text, fontSize = 17.sp, fontWeight = FontWeight.Bold)
             Text("${count}회", color = accent, fontSize = 18.sp, fontWeight = FontWeight.ExtraBold)
         }
         LinearProgressIndicator(
@@ -459,12 +460,12 @@ private fun NotesPane(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("도로 위 쪽지", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.ExtraBold)
+                Text("도로 위 쪽지", color = TodakColors.Text, fontSize = 22.sp, fontWeight = FontWeight.ExtraBold)
                 Button(
                     onClick = onOpenVoiceComposer,
                     colors = ButtonDefaults.buttonColors(containerColor = TodakColors.RouteDeep)
                 ) {
-                    Text("남기기", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                    Text("남기기", color = TodakColors.OnColor, fontSize = 18.sp, fontWeight = FontWeight.Bold)
                 }
             }
 
@@ -487,7 +488,7 @@ private fun NotesPane(
                     )
                     Text(
                         text = "“${incoming.displayText}”",
-                        color = Color.White,
+                        color = TodakColors.Text,
                         fontSize = 17.sp,
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis
@@ -499,7 +500,12 @@ private fun NotesPane(
                             containerColor = if (state.isTtsSpeaking) TodakColors.EdgeStrong else TodakColors.RouteDeep
                         )
                     ) {
-                        Text(if (state.isTtsSpeaking) "멈추기" else "듣기", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                        Text(
+                            if (state.isTtsSpeaking) "멈추기" else "듣기",
+                            color = if (state.isTtsSpeaking) TodakColors.Text else TodakColors.OnColor,
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Bold
+                        )
                     }
                 }
             }
@@ -543,7 +549,7 @@ private fun NotesPane(
             ) {
                 Text(
                     "쪽지함 ${received.size + NoteInbox.mine(state.notes).size}",
-                    color = Color.White,
+                    color = TodakColors.RouteDeep,
                     fontSize = 18.sp,
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.padding(vertical = 4.dp)
