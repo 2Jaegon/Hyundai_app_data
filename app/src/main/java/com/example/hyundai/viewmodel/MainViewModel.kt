@@ -10,6 +10,7 @@ import com.example.hyundai.domain.GleoAiAssistant
 import com.example.hyundai.domain.MannerEvaluationEngine
 import com.example.hyundai.domain.NoteAccess
 import com.example.hyundai.domain.NoteInbox
+import com.example.hyundai.domain.RangeAdvisor
 import com.example.hyundai.domain.VehicleSignalTracker
 import com.example.hyundai.model.AppScreen
 import com.example.hyundai.model.DrivingEvaluationState
@@ -49,6 +50,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
@@ -146,6 +148,8 @@ class MainViewModel(application: Application) :
     private var routeIsFallback = false
     private var progressM = 0.0
     private var realLocationSeen = false
+    /** 차량 주행거리(Odometer)로 마지막으로 거리를 적립한 시각. 이 동안에는 시연 주행 거리를 겹쳐 적립하지 않는다. */
+    private var lastOdometerCreditAtMs = 0L
     private var lastDestination: GeoPoint? = null
     private var routeJob: Job? = null
     private var liveTurn: TurnIcon? = null
@@ -188,6 +192,16 @@ class MainViewModel(application: Application) :
                     if (!canBrowse) closeAllTouchSurfaces()
                 }
         }
+        // 안내 배너는 잠깐만 보여 준다. 지난 안내가 계속 떠 있으면 지금 상황으로 오해한다.
+        viewModelScope.launch {
+            _uiState.map { it.toastBanner }
+                .distinctUntilChanged()
+                .collectLatest { text ->
+                    if (text.isBlank()) return@collectLatest
+                    delay(TOAST_VISIBLE_MS)
+                    _uiState.update { if (it.toastBanner == text) it.copy(toastBanner = "") else it }
+                }
+        }
     }
 
     private fun canBrowseNow(): Boolean {
@@ -215,6 +229,7 @@ class MainViewModel(application: Application) :
                     state.copy(evaluation = updatedEval)
                 }
                 advanceDemoDrive()
+                evaluateHeldTurnSignal()
             }
         }
     }
@@ -242,15 +257,63 @@ class MainViewModel(application: Application) :
         }
     }
 
-    /** 차량 위치 센서가 없는 환경(에뮬레이터/시연)에서는 D 기어일 때 경로를 따라 자동으로 진행한다. */
+    /**
+     * 차량 위치 센서가 없는 환경(에뮬레이터/시연)에서는 D 기어일 때 경로를 따라 자동으로 진행한다.
+     * N 기어로 굴러가는 동안에도 차는 움직이므로 같이 진행한다(속도는 가상 콘솔 값을 따른다).
+     */
     private fun advanceDemoDrive() {
         val t = _uiState.value.telemetry
         val data = routeData
-        if (data == null || realLocationSeen || t.gear != GearState.D) return
+        if (data == null || realLocationSeen || (t.gear != GearState.D && t.gear != GearState.N)) return
         if (progressM >= data.track.totalM) return
+        val before = progressM
         progressM = (progressM + t.speedKmh / 3.6).coerceAtMost(data.track.totalM)
         publishNav()
+        creditDemoDistance(progressM - before)
         checkNoteZoneProximity()
+    }
+
+    /**
+     * 시연 주행으로 간 거리도 Safe/Smooth 평가에 넣는다. GPS가 경로 위에 있으면 위치 콜백이,
+     * 차량 주행거리(Odometer)가 늘고 있으면 그 콜백이 이미 적립하므로 그때는 건너뛴다.
+     */
+    private fun creditDemoDistance(deltaM: Double) {
+        if (deltaM <= 0.0) return
+        if (SystemClock.elapsedRealtime() - lastOdometerCreditAtMs < ODOMETER_FRESH_MS) return
+        val deltaKm = (deltaM / 1000.0).toFloat()
+        val current = _uiState.value
+        val step = evaluationEngine.onDistanceDriven(
+            currentState = current.evaluation,
+            deltaKm = deltaKm,
+            currentSpeedKmh = current.telemetry.speedKmh
+        )
+        applyEvaluationResult(
+            stepResult = step,
+            newTelemetry = current.telemetry.copy(
+                odometerKm = current.telemetry.odometerKm + deltaKm,
+                sessionDrivenKm = current.telemetry.sessionDrivenKm + deltaKm
+            )
+        )
+    }
+
+    /**
+     * 차량 신호로 깜빡이가 켜져 있는 동안 1초마다 유지 시간과 진행 방향 변화를 다시 본다.
+     * 깜빡이가 바뀔 때만 평가하면 유지 시간이 늘지 않아 매너 운전 인증이 나오지 않는다.
+     * GPS가 경로 위에 있으면 위치 콜백이 같은 평가를 하므로 건너뛴다.
+     */
+    private fun evaluateHeldTurnSignal() {
+        if (realLocationSeen) return
+        val signal = signalTracker.activeSignal
+        if (signal != TurnSignalState.LEFT && signal != TurnSignalState.RIGHT) return
+        val current = _uiState.value
+        val step = evaluationEngine.onTurnSignalAndHeadingChanged(
+            currentState = current.evaluation,
+            newSignal = signal,
+            currentHeadingDeg = current.telemetry.headingDeg,
+            holdDurationSec = signalTracker.currentSignalHoldSeconds(SystemClock.elapsedRealtime())
+        )
+        applyEvaluationResult(step, current.telemetry)
+        if (step.expGained > 0) triggerMannerSparkle()
     }
 
     /**
@@ -715,6 +778,7 @@ class MainViewModel(application: Application) :
             val deltaKm = signalTracker.onOdometerUpdated(odometerKm)
             val current = _uiState.value
             if (deltaKm > 0f) {
+                lastOdometerCreditAtMs = SystemClock.elapsedRealtime()
                 val step = evaluationEngine.onDistanceDriven(
                     currentState = current.evaluation,
                     deltaKm = deltaKm,
@@ -1060,6 +1124,7 @@ class MainViewModel(application: Application) :
      *    운전자가 정차 화면 상단의 리포트 버튼을 눌렀을 때만 열리도록 한다.)
      */
     fun shiftGear(newGear: GearState) {
+        val justParked = newGear == GearState.P && _uiState.value.telemetry.gear != GearState.P
         _uiState.update { state ->
             val newSpeed = if (newGear == GearState.P) 0f else 62f
             val updatedTracks = if (newGear == GearState.P && state.telemetry.gear != GearState.P) {
@@ -1110,6 +1175,17 @@ class MainViewModel(application: Application) :
                 }
             )
         }
+        if (justParked) suggestChargersIfLow()
+    }
+
+    /** 배터리나 주행가능거리가 모자란 채로 주차하면, 주행 중 경고에서 약속한 대로 가까운 충전소 목록을 연다. */
+    private fun suggestChargersIfLow() {
+        val state = _uiState.value
+        val console = state.console ?: return
+        if (!RangeAdvisor.needsCharge(console.batteryPct, console.rangeKm, state.nav.remainingM)) return
+        openScreen(AppScreen.DESTINATION)
+        if (_uiState.value.screen != AppScreen.DESTINATION) return
+        showPlaceList(PlaceListMode.CHARGERS)
     }
 
     private fun applyEvaluationResult(
@@ -2052,6 +2128,12 @@ private const val HELD_NOTE_LINGER_MS = 1_800L
 
 /** 차량 내비 TBT를 마지막으로 받은 뒤 이 시간이 지나면 우리 경로 계산값으로 돌아간다. */
 private const val LIVE_TURN_TTL_MS = 5_000L
+
+/** 주행 화면 안내 배너가 떠 있는 시간. */
+private const val TOAST_VISIBLE_MS = 6_000L
+
+/** 차량 주행거리 콜백이 이 시간 안에 거리를 늘렸으면 시연 주행 거리는 적립하지 않는다. */
+private const val ODOMETER_FRESH_MS = 5_000L
 
 /** 이 거리보다 가까운 목적지 변경은 같은 목적지로 보고 경로를 다시 구하지 않는다. */
 private const val NEW_DESTINATION_MIN_M = 100.0

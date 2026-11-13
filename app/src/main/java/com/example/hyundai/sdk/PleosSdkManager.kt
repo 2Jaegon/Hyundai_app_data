@@ -833,7 +833,8 @@ class PleosSdkManager(
         val tts = pleosTts
         // Pleos TTS가 실제로 onReady된 상태일 때만 먼저 호출하고, 450ms 안에 onStart가 오지 않으면
         // 에뮬레이터/단말에서 음성이 묻히지 않도록 즉시 Android 시스템 TTS로 전환한다.
-        if (tts != null && isPleosTtsReady) {
+        // 이 SDK는 onReady를 주지 않으므로(실측) 준비 플래그를 기다리지 않고 먼저 말해 본다. 실패하면 watchdog이 대체한다.
+        if (tts != null) {
             val ok = runCatching { tts.speak(text, true) }
                 .onFailure { Log.w(tag, "Pleos TTS speak failed: ${it.message}") }
                 .isSuccess

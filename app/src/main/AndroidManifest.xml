@@ -33,6 +33,13 @@
     <uses-permission android:name="pleos.car.permission.NAVI_CUSTOM_ROUTE" />
     <uses-permission android:name="pleos.car.permission.NAVI_CUSTOM_ETC" />
 
+    <!-- Android 11+ 패키지 가시성: 선언하지 않으면 시스템 TTS 엔진을 찾지 못해 안드로이드 TTS 대체가 동작하지 않는다. -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.TTS_SERVICE" />
+        </intent>
+    </queries>
+
     <application
         android:allowBackup="false"
         android:usesCleartextTraffic="false"
@@ -45,6 +52,10 @@
         <activity
             android:name=".MainActivity"
             android:exported="true">
+            <!-- 주행 중(P 외 기어)에도 시스템이 화면을 가리지 않게 한다. 터치 차단은 앱이 NoteAccess로 직접 한다. -->
+            <meta-data
+                android:name="distractionOptimized"
+                android:value="true" />
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />

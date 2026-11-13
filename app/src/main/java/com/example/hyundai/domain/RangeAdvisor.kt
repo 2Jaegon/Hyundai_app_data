@@ -8,20 +8,21 @@ object RangeAdvisor {
     /** 남은 주행가능거리가 남은 경로보다 이만큼 넉넉해야 안심한다. */
     private const val RANGE_MARGIN = 1.2
 
-    fun needsCharge(batteryPct: Int?, rangeKm: Int?, remainingRouteM: Double): Boolean {
-        if (batteryPct != null && batteryPct <= LOW_BATTERY_PCT) return true
-        if (rangeKm != null && remainingRouteM > 0.0) return rangeKm * 1000.0 < remainingRouteM * RANGE_MARGIN
-        return false
+    fun needsCharge(batteryPct: Int?, rangeKm: Int?, remainingRouteM: Double): Boolean =
+        isLowBattery(batteryPct) || isRangeShort(rangeKm, remainingRouteM)
+
+    /** 주행 화면에 띄울 한 줄. 충전이 필요 없으면 null. 경고를 띄운 이유(배터리 또는 주행가능거리)를 앞에 쓴다. */
+    fun warning(batteryPct: Int?, rangeKm: Int?, remainingRouteM: Double): String? {
+        val head = when {
+            isLowBattery(batteryPct) -> "배터리 $batteryPct%"
+            isRangeShort(rangeKm, remainingRouteM) -> "주행가능 ${rangeKm}km"
+            else -> return null
+        }
+        return "$head · 주차하면 충전소를 찾아 드릴게요"
     }
 
-    /** 주행 화면에 띄울 한 줄. 충전이 필요 없으면 null. */
-    fun warning(batteryPct: Int?, rangeKm: Int?, remainingRouteM: Double): String? {
-        if (!needsCharge(batteryPct, rangeKm, remainingRouteM)) return null
-        val head = when {
-            batteryPct != null -> "배터리 $batteryPct%"
-            rangeKm != null -> "주행가능 ${rangeKm}km"
-            else -> "배터리 부족"
-        }
-        return "$head · 정차하면 충전소를 찾아 드릴게요"
-    }
+    private fun isLowBattery(batteryPct: Int?): Boolean = batteryPct != null && batteryPct <= LOW_BATTERY_PCT
+
+    private fun isRangeShort(rangeKm: Int?, remainingRouteM: Double): Boolean =
+        rangeKm != null && remainingRouteM > 0.0 && rangeKm * 1000.0 < remainingRouteM * RANGE_MARGIN
 }

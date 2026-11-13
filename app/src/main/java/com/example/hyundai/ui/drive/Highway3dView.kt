@@ -2,6 +2,7 @@ package com.example.hyundai.ui.drive
 
 import android.annotation.SuppressLint
 import android.util.Log
+import android.view.ViewGroup
 import android.webkit.ConsoleMessage
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceError
@@ -87,6 +88,8 @@ private fun HighwayWebView(
     }
     val webView = remember(context) {
         WebView(context).apply {
+            // AndroidView 기본값(WRAP_CONTENT)이면 WebView가 내용 높이 모드가 되어 CSS height:100%가 0이 되고 장면이 안 보인다(실측).
+            layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
             settings.javaScriptEnabled = true
             settings.allowFileAccess = false
             settings.allowContentAccess = false
