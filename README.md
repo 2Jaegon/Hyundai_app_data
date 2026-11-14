@@ -1,65 +1,112 @@
-# 🚗 현대자동차 앱 공모전 (Pleos Connect) - 온길 (On-Gil) & DCX 원천 데이터셋
+# 온길 (On-Gil)
 
-> **"도로 위를 따뜻하게"**  
-> 안전·매너운전과 도로 위 쪽지 활동으로 나만의 펫을 키우고, 적립된 포인트를 현대자동차 실질 혜택으로 연결하는 참여형 모빌리티 일상 동행 서비스
+운전자의 매너운전 습관과 도로 위에서 나누는 따뜻한 교류를 쌓아, 펫 성장과 차량 혜택으로 이어주는 차량용 일상 동행 서비스
 
-현대자동차그룹의 차세대 소프트웨어 중심 차량(SDV) OS인 **PLEOS(플레오스)** 탑재 차량용 인카 앱 **"온길 (On-Gil)"**의 프로덕션 코드베이스 및 기획·사용자 경험(DCX) 분석을 위한 **100% 실사용자 기반 고순도 원천 데이터셋(20,542건)** 통합 저장소입니다.
+## APK
 
----
+- 위치: [`apk/온길_release.apk`](apk/온길_release.apk)
+- release 빌드(서명됨), 패키지 `com.example.hyundai`, 버전 1.0.0
 
-## 🌟 1. 온길 (On-Gil) 인카 앱 핵심 기능
+## 실행 방법
 
-1. **고정 시야 3D 내비게이션 주행 화면 & 전조등 연동 주/야간 전환**
-   - 고정 시야(`18.2` 줌, 3D 건물 최대 `18m` 캡) 입체 지도 위로 주행 경로만 밝게 강조 및 지나간 경로선 실시간 트리밍(`RouteWindow`)
-   - 태양 고도(NOAA) 계산 + **차량 전조등(`Light.registerLowBeamLightState`) 점등 신호** 기반 **주간(회청색) / 야간(다크) 지도 자동 전환**
-   - 시선 분산을 최소화한 턴바이턴(TBT) 안내 카드와 남은 시간/거리 표시
+1. Pleos Connect 에뮬레이터를 실행합니다.
+2. APK를 설치합니다.
 
-2. **애니메이션 마스코트 캐릭터 '제로(Zero)'**
-   - 듀얼 캐치라이트 눈망울, 그라데이션 털, 살랑이는 귀·꼬리를 갖춘 차량 내 실시간 동행 강아지 캐릭터
-   - 성장 단계(Lv.1 기본 목걸이 → Lv.2 방울 머플러 → Lv.3 발그레한 볼터치 → Lv.4 황금 왕관)별 시각적 보상
-   - 쪽지 수신 시 **쪽지를 양손에 들고 경청하는 애니메이션** 및 도로·전조등·주행 맥락 맞춤형 대사(`GleoAiAssistant`)
+   ```bash
+   adb install -r apk/온길_release.apk
+   ```
 
-3. **도로 위 익명 음성 쪽지 (10초 핸즈프리 & 오디오 포커스 Ducking)**
-   - 주행 중 음성으로만 안전하게 작성 및 핸즈프리 음성 명령(`"응 들려줘"`, `"좋아요"`, `"그만"`)으로 제어
-   - AI 실시간 안전 검증, 개인정보(차량번호/연락처) 마스킹, 비방 차단 및 다정 순화
-   - **진행 방향 ±45° 이내 운전자에게만 재생**하여 반대 차선 혼선 방지 및 차량 미디어 자동 볼륨 낮춤(Ducking)
-   - 1-Tap / 음성 '좋아요' 피드백 및 쪽지 수명 연장
+3. 앱 목록에서 "온길"을 실행합니다. 명령으로 실행하려면 다음을 씁니다.
 
-4. **실시간 차량 신호 기반 어뷰징 방지 3대 안전·매너운전 평가 엔진 (무감점 긍정 강화)**
-   - **실시간 차량 연동**: `Vehicle SDK`(기어·방향지시등·브레이크·주행거리·전조등) 및 `FusedLocation`($\Delta d / \Delta t$ 속도·가속도 산출) 실시간 바인딩
-   - **Safe Drive**: 1.0km 안정 주행 완주 시마다 +10 EXP / +5 P
-   - **Smooth Drive**: 2.0km 무급가감속 완주 시 +20 EXP / +10 P (급제동 시 감점 없이 보너스만 리셋)
-   - **Manner Drive**: 깜빡이 1.5초 유지 + 실제 방위각 25° 이상 회전/차선변경 + 45초 쿨타임 충족 시에만 인정 (**단순 점멸 어뷰징 차단**)
+   ```bash
+   adb shell am start -n com.example.hyundai/.MainActivity
+   ```
 
-5. **주차(P) 대시보드 & 현대 모빌리티 리워드 연계**
-   - 기어 P 또는 정차 시 쪽지함, 설정, 오늘의 온기 리포트 자동 활성화
-   - 나의 바퀴자취 지도 (구간 단위 익명 주행 자취)
-   - 블루멤버스(Blue Members), 블루핸즈 정비 할인권, 마이현대 Shop 포인트 교환
+4. 처음 실행할 때 위치(FUSED_LOCATION 포함)와 마이크 권한을 허용합니다.
 
----
+소스에서 직접 빌드하려면 JDK 17 또는 21과 Android SDK(compileSdk 35)가 필요합니다.
 
-## 🛠️ 2. 앱 기술 스택 & Pleos Connect SDK
+```bash
+./gradlew :app:assembleDebug
+```
 
-- **플랫폼**: Android Automotive OS (API 34, 2560×1440 Landscape)
-- **UI 프레임워크**: Jetpack Compose (BOM 2024.04.01), Material 3
-- **지도 엔진**: MapLibre Native Android 11.13.5 (OpenFreeMap 3D Vector Tiles + AWS Terrarium DEM Hillshade)
-- **Pleos Connect SDKs**:
-  - `ai.pleos.playground:Vehicle:2.3.2` (Gear, TurnSignal, Brake, Odometer, Light 실시간 리스너)
-  - `ai.pleos.playground:FusedLocation:1.1.3` (실시간 좌표·방위각·근접알림 및 속도 산출)
-  - `ai.pleos.playground:NaviHelper:3.0.5` (TBT 회전 안내·도로명·제한속도·목적지 연동)
-  - `ai.pleos.playground:TextToSpeech:3.3.1` (익명 쪽지 TTS + AudioFocus Ducking + Server/On-Device)
-  - `ai.pleos.playground:SpeechToText:3.3.1` (10초 음성 쪽지 녹음 및 주행 중 음성 명령 인식)
-- **프로젝트 상세 계획서**: [PROJECT_PLAN.md](PROJECT_PLAN.md)
+결과물은 `app/build/outputs/apk/debug/app-debug.apk`입니다. release 서명용 `keystore.properties`는 저장소에 포함하지 않습니다.
+
+## 테스트 환경 및 필요한 설정
+
+- **인터넷 연결:** 경로(OSRM), 지도 타일(OpenFreeMap), 장소·충전소 검색(Nominatim)에 씁니다. 연결이 없으면 경로는 내장된 시연 경로로 대신합니다.
+- **시연 주행:** GPS 위치가 경로에서 2km 넘게 떨어져 있으면(에뮬레이터 기본 위치 등) 앱이 경로를 따라 주행을 자동으로 진행합니다. 경로 근처로 옮기면(`adb emu geo fix <경도> <위도>`) 실제 위치를 따라갑니다.
+- **기어·속도 조작:** 화면 하단의 시뮬레이터 조작판 또는 Pleos 가상 콘솔로 바꿉니다.
+- **가상 콘솔(선택):** `adb forward tcp:8088 tcp:8088` 후 PC 브라우저에서 `http://127.0.0.1:8088/`을 엽니다. 기어, 속도, 방향지시등, 전조등, 배터리, 경고등, 크루즈, 하이패스 값을 바꾸면 앱이 1초마다 읽어 반영합니다. 설정의 "3D 도로" 주행 화면은 가상 콘솔이 켜진 에뮬레이터에서만 보입니다.
+- **주행 중 조작 제한:** 쪽지함, 설정, 목적지 화면은 P 기어이거나 정차(0km/h) 중일 때만 열립니다. 주행 중 쪽지는 음성으로만 다룹니다.
+- **사용한 Pleos SDK:** Vehicle 2.3.2, FusedLocation 1.1.3, TextToSpeech 3.3.1, SpeechToText 3.3.1, NaviHelper 3.0.5
+
+## Pleos Connect 에뮬레이터 버전과 화면 규격
+
+- 에뮬레이터: Pleos_Connect_v2.1.0 (`RELEASE.release_connect_v2.1.0`, Android 14 / API 34, x86_64)
+- 화면: 2560 x 1440 가로, 160dpi
+
+<br>
 
 ---
 
-## 📊 3. 수집된 DCX 원천 데이터 총괄 현황 (총 20,542건)
+# 부록: 프로젝트 소개
 
-> **💡 데이터 무결성 원칙 (Data Integrity & Authenticity)**  
-> * 모의/가짜/합성 데이터(Mock / Synthetic / LLM 생성) **0.0% (Zero Fake Data)**
-> * 최근 24개월(2024~2026) 이내 작성된 최신성 데이터
-> * 전화번호, 이메일, 차량번호 등 개인정보(PII) 정밀 마스킹 완료
-> * 원문 텍스트 요약이나 왜곡 없이 날 것 그대로 JSON / CSV (UTF-8-SIG) / JSONL 보존
+> 여기부터는 공모전 제출 요구 항목이 아닌 참고 자료입니다. 서비스 기획의 전체 내용은 기획서에 있습니다.
+
+## 🌟 핵심 기능
+
+1. **고정 시야 3D 내비게이션 & 주/야간 자동 전환**
+   - 가까운 고정 카메라로 입체 지도를 보여 주고, 지나간 경로선은 차 뒤에서 부드럽게 지웁니다.
+   - 태양 고도(NOAA 계산)와 차량 전조등 신호(Vehicle SDK `registerLowBeamLightState`)로 낮/밤 지도를 자동으로 바꿉니다.
+   - 턴바이턴(TBT) 안내 카드와 남은 시간·거리를 표시합니다. 설정에서 가상 콘솔의 3D 도로 화면으로 바꿀 수 있습니다.
+
+2. **동행 펫 '제로'**
+   - 픽셀아트 푸들 캐릭터입니다. 레벨에 따라 아기(Lv.1) → 성견(Lv.2~3) → 노견(Lv.4 이상)으로 자랍니다.
+   - 상황에 따라 놀기, 잠자기, 달리기, 먹기, 조르기, 기뻐하기 포즈로 바뀌고, 쪽지가 오면 편지를 들고 알려 줍니다.
+
+3. **도로 위 익명 음성 쪽지**
+   - 주행 중에는 음성으로만 다룹니다. 쪽지는 10초 동안 말로 남기고, "응·들려줘"로 듣고, "좋아요·토닥"으로 공감하고, "그만·다음"으로 넘깁니다(`GleoAiAssistant`).
+   - 규칙 기반 검사(`AiNoteModerator`)로 비방은 막고 거친 표현은 순화하며, 차량번호·연락처 같은 개인정보는 가립니다.
+   - 진행 방향 ±45° 안의 쪽지만 재생해 반대 차선 쪽지를 거르고, 재생 중에는 다른 미디어 소리를 낮춥니다(AudioFocus Ducking).
+
+4. **차량 신호 기반 매너운전 평가 (감점 없는 긍정 보상)**
+   - 기어, 방향지시등, 브레이크, 주행거리, 전조등(Vehicle SDK)과 위치(FusedLocation)를 실시간으로 받아 평가합니다.
+   - **Safe Drive:** 실제 주행거리 1km마다 +10 EXP / +5 P
+   - **Smooth Drive:** 2km 동안 급가속·급제동이 없으면 +20 EXP / +10 P. 급제동해도 감점 없이 구간만 다시 시작합니다.
+   - **Manner Drive:** 방향지시등을 1.5초 이상 켜고 실제 진행 방향이 25° 이상 바뀌었을 때만 +15 EXP / +10 P, 45초 쿨타임. 깜빡이만 켜는 어뷰징은 인정하지 않습니다.
+
+5. **주차(P) 화면 & 혜택**
+   - P 기어이거나 정차 중일 때만 쪽지함, 설정, 목적지 화면, 오늘의 바퀴자취·온기 요약이 열립니다.
+   - 목적지 검색, 집·회사·즐겨찾기·최근 목적지, 주변 충전소를 보여 주고, 고른 목적지는 기본 내비(NaviHelper)로 넘겨 안내합니다.
+   - 배터리가 20% 이하이거나 주행가능거리가 남은 경로에 비해 부족하면 경고하고, 주차하면 충전소 목록을 띄웁니다.
+   - 쌓인 포인트는 블루멤버스 포인트 전환, 블루핸즈 정비 할인권, 마이현대 Shop 교환으로 이어집니다(시연용 예시 데이터).
+
+## 🛠️ 기술 스택 & Pleos Connect SDK
+
+- **플랫폼:** Android Automotive OS (API 34, 2560 x 1440 가로)
+- **언어·빌드:** Kotlin 2.0.0, AGP 8.8.2, compileSdk 35, minSdk 28
+- **UI:** Jetpack Compose (BOM 2024.04.01), Material 3, MVVM (`MainViewModel` 하나가 화면 상태 전체를 관리)
+- **지도:** MapLibre Android 11.13.5, OpenFreeMap 벡터 타일 + AWS Terrarium 지형 음영
+- **경로·장소:** OSRM(경로), Nominatim(장소·충전소 검색)
+- **Pleos Connect SDK:**
+  - `ai.pleos.playground:Vehicle:2.3.2`: 기어, 방향지시등, 브레이크, 주행거리, 전조등 실시간 리스너
+  - `ai.pleos.playground:FusedLocation:1.1.3`: 실시간 좌표와 방위각. 속도·가속도는 위치 변화로 계산
+  - `ai.pleos.playground:NaviHelper:3.0.5`: 턴바이턴 안내, 도로명, 제한속도, 목적지 연동
+  - `ai.pleos.playground:TextToSpeech:3.3.1`: 익명 쪽지 음성 재생
+  - `ai.pleos.playground:SpeechToText:3.3.1`: 음성 쪽지 녹음과 주행 중 음성 명령 인식
+- **테스트:** JVM 단위 테스트 107개 (평가 엔진, 쪽지 검사, 내비, 장소 파서 등)
+- **상세 계획서:** [PROJECT_PLAN.md](PROJECT_PLAN.md)
+
+## 📊 DCX 원천 데이터 (총 20,542건)
+
+서비스 기획과 사용자 경험(DCX) 분석에 쓴 원천 데이터입니다. 앱 빌드와는 관계없습니다.
+
+> **수집 원칙**
+> - 모의·합성·LLM 생성 데이터를 섞지 않고 실제 사용자가 쓴 글만 모았습니다.
+> - 최근 24개월(2024~2026) 안에 작성된 글입니다.
+> - 전화번호, 이메일, 차량번호 같은 개인정보는 가렸습니다.
+> - 원문을 요약하거나 고치지 않고 JSON / CSV(UTF-8-SIG) / JSONL로 보존했습니다.
 
 | 데이터 분류 | 세부 출처 / 서비스 | 수집 수량 | 주요 수집 내용 및 핵심 VOC |
 | :--- | :--- | :---: | :--- |
@@ -75,37 +122,33 @@
 | | **Roadtrippers (로드트리퍼스)** | 621건 | 경유지 탐색 번거로움, 강제 과금, 경로 왜곡 (불만율 80.5%) |
 | | *해외 앱스토어 소계* | *7,571건* | |
 | **국내 커뮤니티 실차주 VOC** | **보배드림 & 뽐뿌 자동차포럼** | 510건 | 본문 원문 + 상위 댓글 전체 (장거리 주행 피로, 졸음운전, EV 충전) |
-| | **아카라이브 (자동차/캠핑 채널)** | 130건 | 2026년 실차주 날 것의 목소리 (졸음쉼터 부족, 운전점수 조작 시도 등) |
+| | **아카라이브 (자동차/캠핑 채널)** | 130건 | 2026년 실차주 목소리 (졸음쉼터 부족, 운전점수 조작 시도 등) |
 | | *커뮤니티 소계* | *640건* | |
 | **고속도로 휴게소 공공데이터** | **한국도로공사 공공데이터** | 30건 | EX-FOOD 맛집 20선, 편의시설 및 초급속 E-pit 충전소 현황 |
 | **국제 학술 연구 논문** | **ACM / IEEE ITS / ACM CHI** | 5편 | 인카 음성 대화의 졸음예방 효과 및 운전점수 게이미피케이션 학술 근거 |
-| **총계** | **100% 검증 가능한 순수 원천 데이터** | **20,542건** | **국내외 실차주 및 여행자들의 방대한 페인포인트 아카이브** |
+| **총계** | | **20,542건** | |
 
----
-
-## 📁 4. 디렉터리 구조
+## 📁 디렉터리 구조
 
 ```text
-hyundai_app/
-├── app/                                       # 온길(On-Gil) Android Automotive 앱 모듈
-│   ├── build.gradle.kts                       # 의존성 및 Pleos SDK 설정
+Hyundai_app_data/
+├── apk/                          # 제출용 release APK (온길_release.apk)
+├── app/                          # 온길 Android Automotive 앱 모듈
+│   ├── build.gradle.kts          # 의존성, Pleos SDK, release 서명 설정
 │   └── src/
 │       ├── main/
 │       │   ├── java/com/example/hyundai/
-│       │   │   ├── MainActivity.kt            # 메인 엔트리포인트 (Landscape 2560x1440)
-│       │   │   ├── domain/                    # 안전/매너운전 평가, AI 쪽지 검증 엔진
-│       │   │   ├── nav/                       # 3D MapLibre, NOAA 일출몰, OSRM 파서
-│       │   │   ├── sdk/                       # 5대 Pleos Connect SDK 매니저
-│       │   │   ├── ui/                        # 드라이브, 파킹, 제로(펫), 인박스, 모달
-│       │   │   └── viewmodel/                 # MVVM 상태 관리 (MainViewModel)
-│       │   └── assets/                        # MapLibre 벡터/음영 타일 스타일
-│       └── test/                              # 53개 단위 테스트 (도메인, 내비, 펫 렌더링)
-├── PROJECT_PLAN.md                            # 단계별 작업 계획서 (Phase 1~5)
-├── README.md                                  # 프로젝트 및 데이터셋 통합 안내서
-├── data/                                      # DCX 벤치마크 및 공공 원천 데이터셋
-│   ├── 벤치마크_유사서비스/
-│   ├── 공공데이터_휴게소/
-│   └── 논문/
-├── dcx_collector/                             # 커뮤니티 원천 VOC 수집 모듈 (Python)
-└── src/                                       # 앱스토어 수집 파이프라인 스크립트
+│       │   │   ├── MainActivity.kt   # 단일 액티비티 진입점
+│       │   │   ├── domain/           # 매너운전 평가, 쪽지 검사, 음성 명령, 주행가능거리
+│       │   │   ├── nav/              # 경로(OSRM), 장소 검색, 주/야간 계산, 경로선 처리
+│       │   │   ├── sdk/              # Pleos SDK 5종 매니저, 가상 콘솔 클라이언트
+│       │   │   ├── ui/               # 주행, 주차, 쪽지함, 목적지, 설정, 펫, 모달
+│       │   │   └── viewmodel/        # MVVM 상태 관리 (MainViewModel)
+│       │   └── assets/               # 낮/밤 지도 스타일, 3D 도로 화면
+│       └── test/                     # JVM 단위 테스트 107개
+├── data/                         # DCX 벤치마크 리뷰, 휴게소 공공데이터, 논문
+├── dcx_collector/                # 커뮤니티 VOC 수집 모듈 (Python)
+├── src/                          # 앱스토어 리뷰 수집·분석 스크립트 (Python)
+├── PROJECT_PLAN.md               # 단계별 작업 계획서
+└── README.md
 ```
