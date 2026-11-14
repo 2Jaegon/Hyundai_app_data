@@ -11,6 +11,11 @@ local.properties
 app/build/
 *.hprof
 *.lock
+
+# Release signing (keystore and passwords stay off the repo)
+keystore.properties
+*.jks
+*.keystore
 .superpowers/
 .gemini/
 .kotlin/
