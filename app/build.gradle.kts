@@ -41,6 +41,9 @@ android {
     buildTypes {
         release {
             signingConfig = signingConfigs.findByName("release")
+            // Pleos Connect 에뮬레이터(user 빌드)는 adb로 설치한 앱의 distractionOptimized를
+            // 디버그 가능한 앱에만 인정한다. 이게 없으면 D 기어에서 OS가 앱 화면을 가린다.
+            isDebuggable = true
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
