@@ -4,7 +4,7 @@
 
 ## APK
 
-- 위치: [`apk/온길_release.apk`](apk/온길_release.apk)
+- 위치: [`apk/Shim's Lab_온길_release.apk`](<apk/Shim's Lab_온길_release.apk>)
 - release 빌드(서명됨), 패키지 `com.example.hyundai`, 버전 1.0.0
 
 ## 실행 방법
@@ -13,7 +13,7 @@
 2. APK를 설치합니다.
 
    ```bash
-   adb install -r apk/온길_release.apk
+   adb install -r "apk/Shim's Lab_온길_release.apk"
    ```
 
 3. 앱 목록에서 "온길"을 실행합니다. 명령으로 실행하려면 다음을 씁니다.
@@ -132,7 +132,7 @@
 
 ```text
 Hyundai_app_data/
-├── apk/                          # 제출용 release APK (온길_release.apk)
+├── apk/                          # 제출용 release APK (Shim's Lab_온길_release.apk)
 ├── app/                          # 온길 Android Automotive 앱 모듈
 │   ├── build.gradle.kts          # 의존성, Pleos SDK, release 서명 설정
 │   └── src/
